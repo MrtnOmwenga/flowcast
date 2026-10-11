@@ -2,8 +2,8 @@
 
 The room is one block of uniform cells. Machines are cut out of the mesh, so every
 layout shares the same grid and a layout is fully described by which cells are solid.
-Particles are released at a fixed rate from the cells just above each running machine,
-and a second scalar tracks the age of the air to show where it stagnates.
+Each machine gets its own particle tracer, released at a fixed rate from the cells just
+above it, and a further scalar tracks the age of the air to show where it stagnates.
 """
 
 from __future__ import annotations
@@ -134,10 +134,9 @@ def _topo_faces(spec: CaseSpec) -> str:
 
 def _topo_sources(spec: CaseSpec) -> str:
     actions = []
-    for i, m in enumerate(spec.machines):
-        if m.on:
-            lo, hi = _source_box(spec, i)
-            actions.append(f"    {{ name source{i}; type cellSet; action new; source boxToCell; box {_vec(lo)}{_vec(hi)}; }}")
+    for i in range(len(spec.machines)):
+        lo, hi = _source_box(spec, i)
+        actions.append(f"    {{ name source{i}; type cellSet; action new; source boxToCell; box {_vec(lo)}{_vec(hi)}; }}")
     return "actions\n(\n" + "\n".join(actions) + "\n);\n"
 
 
@@ -151,18 +150,42 @@ patches
 """
 
 
-def _control(spec: CaseSpec) -> str:
-    sources = "\n".join(
-        f"""            source{i}
+def _tracer(name: str, source: str) -> str:
+    return f"""    {name}
+    {{
+        type scalarTransport;
+        libs (solverFunctionObjects);
+        field {name};
+        writeControl writeTime;
+        alphaD 1;
+        alphaDt 1.43;
+        nCorr 0;
+        schemesField s;
+        fvOptions
+        {{
+            source
             {{
                 type scalarSemiImplicitSource;
-                selectionMode cellSet;
-                cellSet source{i};
-                volumeMode absolute;
-                sources {{ s {{ explicit {m.emission:g}; implicit 0; }} }}
-            }}"""
-        for i, m in enumerate(spec.machines)
-        if m.on
+                {source}
+                sources {{ {name} {{ explicit 1; implicit 0; }} }}
+            }}
+        }}
+    }}
+"""
+
+
+def _control(spec: CaseSpec) -> str:
+    # One tracer per machine, each released at one unit per second. The flow does not
+    # depend on the particles, so the field for any combination of running machines is
+    # the weighted sum of these, and one simulation covers every on/off state.
+    tracers = "".join(
+        _tracer(f"s{i}", f"selectionMode cellSet; cellSet source{i}; volumeMode absolute;")
+        for i in range(len(spec.machines))
+    )
+    tracers += _tracer("age", "selectionMode all; volumeMode specific;")
+    averaged = "\n".join(
+        f"            {name} {{ mean on; prime2Mean off; base time; }}"
+        for name in ("U", "age", *(f"s{i}" for i in range(len(spec.machines))))
     )
     start = spec.steps - spec.average_last
     return f"""application simpleFoam;
@@ -182,43 +205,7 @@ runTimeModifiable false;
 
 functions
 {{
-    particles
-    {{
-        type scalarTransport;
-        libs (solverFunctionObjects);
-        field s;
-        writeControl writeTime;
-        alphaD 1;
-        alphaDt 1.43;
-        nCorr 0;
-        schemesField s;
-        fvOptions
-        {{
-{sources}
-        }}
-    }}
-    airAge
-    {{
-        type scalarTransport;
-        libs (solverFunctionObjects);
-        field age;
-        writeControl writeTime;
-        alphaD 1;
-        alphaDt 1.43;
-        nCorr 0;
-        schemesField s;
-        fvOptions
-        {{
-            ageing
-            {{
-                type scalarSemiImplicitSource;
-                selectionMode all;
-                volumeMode specific;
-                sources {{ age {{ explicit 1; implicit 0; }} }}
-            }}
-        }}
-    }}
-    average
+{tracers}    average
     {{
         type fieldAverage;
         libs (fieldFunctionObjects);
@@ -226,9 +213,7 @@ functions
         writeControl writeTime;
         fields
         (
-            U {{ mean on; prime2Mean off; base time; }}
-            s {{ mean on; prime2Mean off; base time; }}
-            age {{ mean on; prime2Mean off; base time; }}
+{averaged}
         );
     }}
 }}
@@ -254,7 +239,7 @@ snGradSchemes { default corrected; }
 _FV_SOLUTION = """solvers
 {
     p { solver GAMG; smoother GaussSeidel; tolerance 1e-7; relTol 0.05; }
-    "(U|k|epsilon|s|age)" { solver smoothSolver; smoother symGaussSeidel; tolerance 1e-8; relTol 0.1; }
+    "(U|k|epsilon|age|s.*)" { solver smoothSolver; smoother symGaussSeidel; tolerance 1e-8; relTol 0.1; }
 }
 SIMPLE
 {
@@ -316,9 +301,10 @@ boundaryField
             "type calculated; value uniform 0;",
             "type nutkWallFunction; value uniform 0;",
         ),
-        "s": scalar("[0 0 0 0 0 0 0]", 0.0, wall),
         "age": scalar("[0 0 1 0 0 0 0]", 0.0, wall),
     }
+    for i in range(len(spec.machines)):
+        fields[f"s{i}"] = scalar("[0 0 0 0 0 0 0]", 0.0, wall)
     for name in fields:
         _FIELD_CLASS.setdefault(name, "volScalarField")
     return fields

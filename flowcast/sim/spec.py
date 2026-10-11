@@ -33,7 +33,11 @@ class Box:
 
 @dataclass(frozen=True)
 class Machine:
-    """A piece of equipment standing on the floor. It releases particles while it is on."""
+    """A piece of equipment standing on the floor. It releases particles while it is on.
+
+    The simulation computes each machine's particle field for a unit release rate, whatever
+    `on` and `emission` say; combine them with `particle_level` to get a room state.
+    """
 
     x: float
     y: float

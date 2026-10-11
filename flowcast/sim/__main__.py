@@ -23,7 +23,8 @@ def main() -> None:
     data = np.load(result)
     fluid = data["fluid"]
     speed = np.linalg.norm(data["velocity"], axis=0)[fluid]
-    particles = data["particles"][fluid]
+    weights = np.array([m.emission if m.on else 0.0 for m in spec.machines], dtype=np.float32)
+    particles = np.tensordot(weights, data["particles"], axes=1)[fluid]
     print(f"result: {result}")
     print(f"runtime: {float(data['runtime']):.0f} s, fluid cells: {int(fluid.sum())}")
     print(f"air speed: mean {speed.mean():.3f}, max {speed.max():.3f} m/s")

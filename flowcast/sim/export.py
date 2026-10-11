@@ -56,7 +56,10 @@ def export_case(case_dir: Path, runtime: float = float("nan")) -> Path:
         out,
         fluid=fluid,
         velocity=np.moveaxis(to_grid(read_field(final / "UMean", n)), -1, 0),
-        particles=to_grid(read_field(final / "sMean", n)),
+        # One field per machine, each for a release of one unit per second
+        particles=np.stack([to_grid(read_field(final / f"s{i}Mean", n)) for i in range(len(spec.machines))])
+        if spec.machines
+        else np.zeros((0, *shape), dtype=np.float32),
         age=to_grid(read_field(final / "ageMean", n)),
         residuals=np.array(list(final_residuals(case_dir).items()), dtype=str),
         runtime=runtime,
