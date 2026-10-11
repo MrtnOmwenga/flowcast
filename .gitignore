@@ -1,0 +1,11 @@
+# Private working notes: never commit
+notes/
+
+# Simulations and trained models
+data/
+
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+dist/
