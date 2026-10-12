@@ -155,7 +155,7 @@ function render(): void {
         <dt>Stagnant air</dt><dd>${number(payload.metrics.stagnant_fraction * 100, 1)}% <small>of the room</small></dd>
         ${confidence === undefined ? "" : `<dt>Model confidence</dt><dd class="${confidence < 0.6 ? "amber" : ""}">${confidence < 0.6 ? "Low: verify before relying on it" : "Good"}</dd>`}
       </dl>
-      <p class="muted small">The yellow marker is the worst point: the place for a particle counter. Source: ${payload.source === "model" ? "model prediction" : "OpenFOAM simulation"}.</p>
+      <p class="muted small">The purple marker is the worst point: the place for a particle counter. Source: ${payload.source === "model" ? "model prediction" : "OpenFOAM simulation"}.</p>
     </section>
 
     <section>

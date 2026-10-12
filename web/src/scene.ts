@@ -7,8 +7,11 @@ export type SliceMode = "particles" | "age" | "off";
 
 const SNAP = 0.2;
 const TRACERS = 7000;
-const CLEAN = new THREE.Color(0x4fb3ff);
-const DIRTY = new THREE.Color(0xff5a36);
+// A white room: tracer and marker colours are chosen to read against light surfaces.
+const CLEAN = new THREE.Color(0x1f7ae0);
+const DIRTY = new THREE.Color(0xe0401f);
+const BACKGROUND = 0xeef1f5;
+const MARKER = 0x6d28d9;
 
 /**
  * The room is simulated with x along its length, y across it and z up. three.js has y up,
@@ -50,7 +53,7 @@ export class RoomScene {
 
   constructor(private container: HTMLElement) {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.scene.background = new THREE.Color(0x0e1320);
+    this.scene.background = new THREE.Color(BACKGROUND);
     container.appendChild(this.renderer.domElement);
     this.camera.position.set(6.5, 5.5, 7.5);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -59,8 +62,8 @@ export class RoomScene {
     this.controls.minDistance = 3;
     this.controls.maxDistance = 22;
 
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x30384d, 1.5));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xcfd6df, 2.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.1);
     sun.position.set(4, 8, 3);
     this.scene.add(sun);
     this.scene.add(this.roomGroup);
@@ -70,7 +73,7 @@ export class RoomScene {
     geometry.setAttribute("color", new THREE.BufferAttribute(this.tracerColors, 3));
     this.tracers = new THREE.Points(
       geometry,
-      new THREE.PointsMaterial({ size: 0.045, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false }),
+      new THREE.PointsMaterial({ size: 0.05, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false }),
     );
     this.tracers.frustumCulled = false;
     this.scene.add(this.tracers);
@@ -83,10 +86,10 @@ export class RoomScene {
     this.scene.add(this.slice);
 
     this.marker = new THREE.Group();
-    const pin = new THREE.Mesh(new THREE.SphereGeometry(0.09, 20, 20), new THREE.MeshBasicMaterial({ color: 0xffe14a }));
+    const pin = new THREE.Mesh(new THREE.SphereGeometry(0.09, 20, 20), new THREE.MeshBasicMaterial({ color: MARKER }));
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(0.2, 0.012, 8, 40),
-      new THREE.MeshBasicMaterial({ color: 0xffe14a }),
+      new THREE.MeshBasicMaterial({ color: MARKER }),
     );
     ring.rotation.x = Math.PI / 2;
     this.marker.add(pin, ring);
@@ -115,32 +118,40 @@ export class RoomScene {
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(lx, ly),
-      new THREE.MeshStandardMaterial({ color: 0x1b2333, roughness: 0.9 }),
+      new THREE.MeshStandardMaterial({ color: 0xe3e8ee, roughness: 0.85 }),
     );
     floor.rotation.x = -Math.PI / 2;
     this.roomGroup.add(floor);
-    const grid = new THREE.GridHelper(Math.max(lx, ly), Math.max(lx, ly) / 0.5, 0x33405c, 0x263048);
-    grid.position.y = 0.002;
+    // Walls and ceiling are drawn from the inside only, so the ones nearest the camera
+    // disappear and the room reads as a white box you can look into.
+    const shell = new THREE.Mesh(
+      new THREE.BoxGeometry(lx, lz, ly),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, side: THREE.BackSide }),
+    );
+    shell.position.y = lz / 2 + 0.001;
+    this.roomGroup.add(shell);
+    const grid = new THREE.GridHelper(Math.max(lx, ly), Math.max(lx, ly) / 0.5, 0xb9c2cf, 0xcdd4de);
+    grid.position.y = 0.004;
     grid.scale.set(lx / Math.max(lx, ly), 1, ly / Math.max(lx, ly));
     this.roomGroup.add(grid);
 
     const box = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(lx, lz, ly)),
-      new THREE.LineBasicMaterial({ color: 0x5b6b8c }),
+      new THREE.LineBasicMaterial({ color: 0x8793a5 }),
     );
     box.position.y = lz / 2;
     this.roomGroup.add(box);
 
-    const supplyMaterial = new THREE.MeshBasicMaterial({ color: 0x4fb3ff, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+    const supplyMaterial = new THREE.MeshBasicMaterial({ color: 0x1f7ae0, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
     for (const [x, y, sx, sy] of room.supplies) {
       const panel = new THREE.Mesh(new THREE.PlaneGeometry(sx, sy), supplyMaterial);
       panel.rotation.x = Math.PI / 2;
-      this.toWorld(x + sx / 2, y + sy / 2, lz - 0.01, panel.position);
+      this.toWorld(x + sx / 2, y + sy / 2, lz - 0.02, panel.position);
       this.roomGroup.add(panel);
     }
-    const extractMaterial = new THREE.MeshBasicMaterial({ color: 0x8f9bb3, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+    const extractMaterial = new THREE.MeshBasicMaterial({ color: 0x5f6b7d, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
     const [y0, y1] = room.extract_y;
-    const walls: [string, number][] = [["x0", 0.01], ["x1", lx - 0.01]];
+    const walls: [string, number][] = [["x0", 0.02], ["x1", lx - 0.02]];
     for (const [name, x] of walls) {
       if (!room.extract_walls.includes(name)) continue;
       const vent = new THREE.Mesh(new THREE.PlaneGeometry(y1 - y0, room.extract_height), extractMaterial);
@@ -158,9 +169,9 @@ export class RoomScene {
     this.machineMeshes = this.machines.map((m) => {
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(m.sx, m.sz, m.sy),
-        new THREE.MeshStandardMaterial({ color: 0xc9d2e3, roughness: 0.55, metalness: 0.15 }),
+        new THREE.MeshStandardMaterial({ color: 0xd4dae2, roughness: 0.45, metalness: 0.25 }),
       );
-      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x1b2333 })));
+      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x66717f })));
       this.scene.add(mesh);
       return mesh;
     });
@@ -173,7 +184,7 @@ export class RoomScene {
       this.toWorld(m.x + m.sx / 2, m.y + m.sy / 2, m.sz / 2, mesh.position);
       const material = mesh.material as THREE.MeshStandardMaterial;
       material.emissive.setHex(m.on ? 0xff7a2f : 0x000000);
-      material.emissiveIntensity = m.on ? 0.45 : 0;
+      material.emissiveIntensity = m.on ? 0.3 : 0;
     });
   }
 
@@ -234,7 +245,7 @@ export class RoomScene {
         pixels[p] = color.r * 255;
         pixels[p + 1] = color.g * 255;
         pixels[p + 2] = color.b * 255;
-        pixels[p + 3] = 150;
+        pixels[p + 3] = 165;
       }
     }
     this.sliceTexture.needsUpdate = true;
