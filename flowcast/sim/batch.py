@@ -82,6 +82,7 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--average-last", type=int, default=None)
+    parser.add_argument("--prefix", default="case", help="case folder prefix; use a new one for each seed")
     args = parser.parse_args()
 
     overrides = {}
@@ -89,7 +90,7 @@ def main() -> None:
         overrides["steps"] = args.steps
     if args.average_last is not None:
         overrides["average_last"] = args.average_last
-    run_batch(sample_specs(args.count, args.seed, **overrides), args.out, args.workers)
+    run_batch(sample_specs(args.count, args.seed, **overrides), args.out, args.workers, prefix=args.prefix)
 
 
 if __name__ == "__main__":

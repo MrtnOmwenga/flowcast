@@ -79,7 +79,7 @@ def respond(spec: CaseSpec, prediction: Prediction) -> dict:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"models": len(ensemble.models), "device": str(ensemble.device)}
+    return {"models": ensemble.members, "device": str(ensemble.device)}
 
 
 @app.post("/api/predict")

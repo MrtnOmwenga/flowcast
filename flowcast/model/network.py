@@ -1,4 +1,4 @@
-"""A 3D U-Net that maps a room layout to its airflow, air age and particle field."""
+"""A 3D U-Net over the room grid, used for both the flow and the particle networks."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .features import INPUT_CHANNELS, TARGET_CHANNELS
 
 
 class Block(nn.Module):
@@ -26,12 +25,12 @@ class Block(nn.Module):
 
 
 class RoomNet(nn.Module):
-    def __init__(self, width: int = 32, depth: int = 3):
+    def __init__(self, inputs: int, outputs: int, width: int = 32, depth: int = 3):
         super().__init__()
         self.depth = depth
         widths = [width * 2**i for i in range(depth + 1)]
         self.down = nn.ModuleList()
-        cin = len(INPUT_CHANNELS)
+        cin = inputs
         for w in widths:
             self.down.append(Block(cin, w))
             cin = w
@@ -41,7 +40,7 @@ class RoomNet(nn.Module):
             self.up.append(nn.ConvTranspose3d(cin, w, 2, stride=2))
             self.merge.append(Block(2 * w, w))
             cin = w
-        self.head = nn.Conv3d(cin, len(TARGET_CHANNELS), 1)
+        self.head = nn.Conv3d(cin, outputs, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         shape = x.shape[2:]

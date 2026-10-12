@@ -1,4 +1,9 @@
-"""Loads the trained ensemble and predicts the fields of a room."""
+"""Loads the trained networks and predicts the fields of a room.
+
+The models directory holds `flow/<name>/model.pt` and `particles/<name>/model.pt`. Several
+of each form an ensemble: their average is the prediction and their disagreement is the
+uncertainty.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,8 @@ import torch
 from ..sim.spec import CaseSpec
 from . import features
 from .network import RoomNet
+
+BATCH = 256
 
 
 @dataclass
@@ -25,59 +32,64 @@ class Prediction:
 class Ensemble:
     def __init__(self, root: Path, device: str | None = None):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.models = []
-        for path in sorted(Path(root).glob("*/model.pt")):
+        self.flow = self._load(Path(root) / "flow", "flow")
+        self.particles = self._load(Path(root) / "particles", "particles")
+
+    def _load(self, root: Path, task: str) -> list[RoomNet]:
+        names = features.CHANNELS[task]
+        models = []
+        for path in sorted(root.glob("*/model.pt")):
             checkpoint = torch.load(path, map_location=self.device, weights_only=True)
-            model = RoomNet(width=checkpoint["width"]).to(self.device).eval()
+            model = RoomNet(len(names["inputs"]), len(names["targets"]), width=checkpoint["width"])
             model.load_state_dict(checkpoint["model"])
-            self.models.append(model)
-        if not self.models:
-            raise FileNotFoundError(f"no trained models found under {root}")
+            models.append(model.to(self.device).eval())
+        if not models:
+            raise FileNotFoundError(f"no trained {task} models found under {root}")
+        return models
+
+    @property
+    def members(self) -> int:
+        return min(len(self.flow), len(self.particles))
+
+    def _run(self, models: list[RoomNet], inputs: np.ndarray) -> np.ndarray:
+        """Output of every member: (members, samples, channels, nx, ny, nz)."""
+        x = torch.from_numpy(inputs).to(self.device)
+        return np.stack([torch.cat([m(chunk) for chunk in x.split(BATCH)]).float().cpu().numpy() for m in models])
 
     @torch.no_grad()
-    def raw(self, specs: list[CaseSpec]) -> list[np.ndarray]:
-        """Network output for each room: (members, machines or 1, channels, nx, ny, nz)."""
-        batches = []
-        counts = []
-        for spec in specs:
-            machines = list(range(len(spec.machines))) or [None]
-            counts.append(len(machines))
-            batches.extend(features.inputs(spec, m) for m in machines)
-        x = torch.from_numpy(np.stack(batches)).to(self.device)
-        outputs = []
-        for model in self.models:
-            parts = [model(chunk) for chunk in x.split(256)]
-            outputs.append(torch.cat(parts).float().cpu().numpy())
-        stacked = np.stack(outputs)  # (members, total samples, channels, ...)
-        result = []
-        start = 0
-        for count in counts:
-            result.append(stacked[:, start : start + count])
-            start += count
-        return result
-
     def predict_many(self, specs: list[CaseSpec]) -> list[Prediction]:
-        return [self._assemble(spec, raw) for spec, raw in zip(specs, self.raw(specs))]
+        fluids = [features.solid_mask(spec) < 0.5 for spec in specs]
+        flow = self._run(self.flow, np.stack([features.flow_inputs(spec) for spec in specs])).mean(axis=0)
+
+        particle_inputs = []
+        owners = []
+        for i, (spec, fluid) in enumerate(zip(specs, fluids)):
+            for machine in range(len(spec.machines)):
+                particle_inputs.append(features.particle_inputs(spec, machine, flow[i, 0:3] * fluid))
+                owners.append(i)
+        if particle_inputs:
+            raw = self._run(self.particles, np.stack(particle_inputs))[:, :, 0]  # (members, samples, nx, ny, nz)
+            mean, spread = raw.mean(axis=0), raw.std(axis=0)
+        owners = np.array(owners)
+
+        predictions = []
+        for i, (spec, fluid) in enumerate(zip(specs, fluids)):
+            velocity, age = features.decode_flow(spec, flow[i])
+            mine = np.flatnonzero(owners == i)
+            if len(mine):
+                particles = np.stack([features.decode_particles(spec, mean[k]) for k in mine])
+                disagreement = spread[mine].max(axis=0)
+            else:
+                particles = np.zeros((0, *fluid.shape), dtype=np.float32)
+                disagreement = np.zeros(fluid.shape, dtype=np.float32)
+            predictions.append(Prediction(
+                fluid=fluid,
+                velocity=(velocity * fluid).astype(np.float32),
+                particles=(particles * fluid).astype(np.float32),
+                age=(np.maximum(age, 0) * fluid).astype(np.float32),
+                spread=(disagreement * fluid).astype(np.float32),
+            ))
+        return predictions
 
     def predict(self, spec: CaseSpec) -> Prediction:
         return self.predict_many([spec])[0]
-
-    @staticmethod
-    def _assemble(spec: CaseSpec, raw: np.ndarray) -> Prediction:
-        fluid = features.solid_mask(spec) < 0.5
-        mean = raw.mean(axis=0)  # average the ensemble members
-        # Airflow and air age do not depend on which machine's particles are asked for
-        flow = features.decode(spec, mean.mean(axis=0))
-        if spec.machines:
-            particles = np.stack([features.decode(spec, sample)["particles"] for sample in mean])
-            spread = raw[:, :, 4].std(axis=0).max(axis=0)
-        else:
-            particles = np.zeros((0, *fluid.shape), dtype=np.float32)
-            spread = np.zeros(fluid.shape, dtype=np.float32)
-        return Prediction(
-            fluid=fluid,
-            velocity=(flow["velocity"] * fluid).astype(np.float32),
-            particles=(particles * fluid).astype(np.float32),
-            age=(np.maximum(flow["age"], 0) * fluid).astype(np.float32),
-            spread=(spread * fluid).astype(np.float32),
-        )

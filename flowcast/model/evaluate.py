@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from ..api.metrics import Assumptions, protected_zone, summarise
-from .dataset import RoomDataset
+from .dataset import load_cases
 from .predict import Ensemble
 
 
@@ -24,7 +24,7 @@ def relative_error(predicted: np.ndarray, actual: np.ndarray, mask: np.ndarray) 
 
 def evaluate(data: Path, models: Path, split: str = "test") -> dict:
     ensemble = Ensemble(models)
-    cases = RoomDataset(data, split).cases
+    cases = load_cases(data, split)
     assumptions = Assumptions()
     rows = []
     seconds = []
@@ -63,7 +63,7 @@ def evaluate(data: Path, models: Path, split: str = "test") -> dict:
     return {
         "split": split,
         "rooms": len(rows),
-        "members": len(ensemble.models),
+        "members": ensemble.members,
         "device": str(ensemble.device),
         "seconds_per_prediction": float(np.median(seconds)),
         "velocity_error": stats("velocity_error"),

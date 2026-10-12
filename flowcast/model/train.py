@@ -1,6 +1,9 @@
-"""Train one model: python -m flowcast.model.train --data data/cases --out data/models/m0 --seed 0
+"""Train one network.
 
-Train several with different seeds to form the ensemble.
+    python -m flowcast.model.train --task flow --data data/cases --out data/models/flow/0 --seed 0
+    python -m flowcast.model.train --task particles --data data/cases --out data/models/particles/0 --seed 0
+
+Train several of each with different seeds to form the ensemble.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from .dataset import RoomDataset
-from .features import TARGET_CHANNELS
+from .features import CHANNELS
 from .network import RoomNet
 
 
@@ -26,12 +29,13 @@ def masked_error(prediction: torch.Tensor, target: torch.Tensor, mask: torch.Ten
 
 def evaluate(model, loader, device) -> torch.Tensor:
     model.eval()
-    total = torch.zeros(len(TARGET_CHANNELS))
+    total = None
     count = 0
     with torch.no_grad():
         for x, y, mask in loader:
             x, y, mask = x.to(device), y.to(device), mask.to(device)
-            total += masked_error(model(x), y, mask).cpu() * x.shape[0]
+            error = masked_error(model(x), y, mask).cpu() * x.shape[0]
+            total = error if total is None else total + error
             count += x.shape[0]
     return total / max(count, 1)
 
@@ -44,7 +48,8 @@ def baseline_error(train: RoomDataset, held_out: RoomDataset) -> torch.Tensor:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train one room airflow model.")
+    parser = argparse.ArgumentParser(description="Train one flow or particle network.")
+    parser.add_argument("--task", choices=tuple(CHANNELS), required=True)
     parser.add_argument("--data", type=Path, default=Path("data/cases"))
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=0)
@@ -57,17 +62,18 @@ def main() -> None:
 
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train = RoomDataset(args.data, "train", augment=True)
-    validation = RoomDataset(args.data, "validation")
+    names = CHANNELS[args.task]
+    train = RoomDataset(args.data, "train", args.task, augment=True)
+    validation = RoomDataset(args.data, "validation", args.task)
     print(f"device {device}; {len(train.cases)} training rooms ({len(train)} samples), "
           f"{len(validation.cases)} validation rooms ({len(validation)} samples)", flush=True)
 
-    baseline = baseline_error(RoomDataset(args.data, "train"), validation)
-    print("baseline  " + "  ".join(f"{n} {v:.4f}" for n, v in zip(TARGET_CHANNELS, baseline)), flush=True)
+    baseline = baseline_error(RoomDataset(args.data, "train", args.task), validation)
+    print("baseline  " + "  ".join(f"{n} {v:.4f}" for n, v in zip(names["targets"], baseline)), flush=True)
 
     loader = DataLoader(train, batch_size=args.batch, shuffle=True, num_workers=args.workers, drop_last=True)
     val_loader = DataLoader(validation, batch_size=args.batch, num_workers=args.workers)
-    model = RoomNet(width=args.width).to(device)
+    model = RoomNet(len(names["inputs"]), len(names["targets"]), width=args.width).to(device)
     optimiser = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     schedule = torch.optim.lr_scheduler.OneCycleLR(optimiser, max_lr=args.lr, total_steps=args.epochs * len(loader))
     scale = baseline.clamp(min=1e-6).to(device)  # weigh each output by how hard it is
@@ -90,11 +96,12 @@ def main() -> None:
         history.append({"epoch": epoch, "validation": error.tolist(), "relative": relative})
         if relative < best:
             best = relative
-            torch.save({"model": model.state_dict(), "width": args.width, "epoch": epoch}, args.out / "model.pt")
+            torch.save({"model": model.state_dict(), "task": args.task, "width": args.width, "epoch": epoch},
+                       args.out / "model.pt")
         print(f"epoch {epoch:3d}  {time.monotonic() - started:5.0f}s  relative to baseline {relative:.3f}  "
-              + "  ".join(f"{n} {v:.4f}" for n, v in zip(TARGET_CHANNELS, error)), flush=True)
+              + "  ".join(f"{n} {v:.4f}" for n, v in zip(names["targets"], error)), flush=True)
         (args.out / "history.json").write_text(json.dumps(
-            {"baseline": baseline.tolist(), "channels": TARGET_CHANNELS, "epochs": history}, indent=2))
+            {"task": args.task, "baseline": baseline.tolist(), "channels": names["targets"], "epochs": history}, indent=2))
 
 
 if __name__ == "__main__":
