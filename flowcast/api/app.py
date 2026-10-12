@@ -7,6 +7,7 @@ FLOWCAST_VERIFY   directory for verification simulations (default data/verify)
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -21,6 +22,7 @@ from ..model.predict import Ensemble, Prediction
 from ..sim.runner import run_case
 from ..sim.rooms import DEFAULT_ROOM, ROOMS
 from ..sim.spec import CaseSpec, Machine
+from . import assistant as assisting
 from . import explain as explaining
 from . import llm, payload
 from .metrics import Assumptions, protected_zone, summarise
@@ -151,6 +153,38 @@ def explain(state: RoomState) -> dict:
         return explaining.explain(spec, prediction, ASSUMPTIONS, best)
     except llm.LanguageModelError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+class Turn(BaseModel):
+    role: str
+    content: str
+
+
+class AssistantRequest(BaseModel):
+    state: RoomState
+    conversation: list[Turn] = Field(min_length=1, max_length=20)
+
+
+@app.post("/api/assistant")
+def assistant(request: AssistantRequest) -> dict:
+    """Carry out a typed request: the language model plans, and Flowcast's own tools do the work."""
+    spec = request.state.spec()
+    session = assisting.Session(
+        list(spec.machines), spec.ach, spec.room, ensemble, ASSUMPTIONS, lowest_safe,
+        max_items=5 if ensemble.meta.get("people") else 3,
+    )
+    conversation = [{"role": t.role, "content": t.content} for t in request.conversation if t.role in ("user", "assistant")]
+    try:
+        outcome = assisting.run(session, conversation)
+    except llm.LanguageModelError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    final = session.spec()
+    return {
+        **outcome,
+        "state": {"machines": [asdict(m) for m in final.machines], "ach": final.ach},
+        "model": llm.model_name(),
+        "hosted_on": llm.HOSTED_ON,
+    }
 
 
 @app.post("/api/optimise")

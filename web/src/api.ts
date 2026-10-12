@@ -44,7 +44,23 @@ export interface Explanation {
   hosted_on: string;
 }
 
+export interface AgentStep {
+  tool: string;
+  arguments: Record<string, unknown>;
+  outcome: Record<string, unknown>;
+}
+
+export interface AgentAnswer {
+  reply: string;
+  steps: AgentStep[];
+  state: RoomState;
+  model: string;
+  hosted_on: string;
+}
+
 export const api = {
+  ask: (state: RoomState, conversation: { role: string; content: string }[]) =>
+    post<AgentAnswer>("/api/assistant", { state, conversation }),
   explain: (state: RoomState) => post<Explanation>("/api/explain", state),
   health: async (): Promise<Health> => (await fetch(`${BASE}/api/health`)).json(),
   /** A stored simulation, used to start the page before the service answers. */

@@ -1,4 +1,4 @@
-import { api, type Explanation, type Verification } from "./api";
+import { api, type AgentAnswer, type AgentStep, type Explanation, type Verification } from "./api";
 import { Fields } from "./field";
 import { RoomScene, overlaps, type SliceMode } from "./scene";
 import { startTutorial } from "./tutorial";
@@ -33,6 +33,15 @@ let sliceHeight = 1.1;
 let busy = "";
 let note = "";
 let verification: Verification | null = null;
+let conversation: { role: string; content: string }[] = [];
+let answer: AgentAnswer | null = null;
+let asking = false;
+let draft = "";
+const EXAMPLES = [
+  "What is the lowest fan setting I can safely run, and what does it save?",
+  "Find a better place for the filling machine, then the lowest safe setting.",
+  "Add a second workbench where it does the least harm.",
+];
 let explanation: Explanation | null = null;
 let explaining = false;
 let languageModel: string | null = null;
@@ -192,6 +201,15 @@ function render(): void {
     ${online ? "" : `<p class="warn">Showing one stored simulation. The prediction service is not connected.</p>`}
     ${note ? `<p class="warn">${note}</p>` : ""}
 
+    ${languageModel ? `<section class="ask" data-tour="ask">
+      <h2>Ask Flowcast</h2>
+      <textarea id="question" rows="2" placeholder="Describe what you want to do with this room" ${asking ? "disabled" : ""}>${escape(draft)}</textarea>
+      <div class="row"><button id="ask" ${online && !asking ? "" : "disabled"}>${asking ? "Working…" : "Ask"}</button></div>
+      ${answer || asking ? "" : `<div class="examples">${EXAMPLES.map((e, i) => `<button class="link" data-example="${i}">${escape(e)}</button>`).join("")}</div>`}
+      ${answer ? `<ol class="steps">${answer.steps.map(stepHtml).join("")}</ol>
+        <div class="explanation">${answer.reply.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute">${escape(answer.model)} on ${escape(answer.hosted_on)}</p></div>` : ""}
+    </section>` : ""}
+
     <section data-tour="fan">
       <label>Fan setting <b>${number(state.ach, 1)}</b> air changes an hour</label>
       <input id="ach" type="range" min="${ACH_MIN}" max="${ACH_MAX}" step="0.5" value="${state.ach}" />
@@ -247,6 +265,56 @@ function render(): void {
   `;
   panel.scrollTop = scroll;
   bind();
+}
+
+const TOOL_NAMES: Record<string, string> = {
+  look: "Looked at the room",
+  move_item: "Moved an item",
+  turn_item: "Turned an item",
+  set_running: "Switched an item",
+  add_item: "Added an item",
+  remove_item: "Removed an item",
+  set_fan: "Set the fan",
+  find_lowest_safe_fan: "Searched for the lowest safe fan setting",
+  find_best_position: "Searched the floor for the best position",
+};
+
+/** One line per thing the agent did, with the figure that came back. */
+function stepHtml(step: AgentStep): string {
+  const outcome = step.outcome as { error?: string; result?: { worst_point_percent_of_limit: number; fan_setting: number }; positions_tried?: number; settings_tested?: number };
+  const tried = outcome.positions_tried ? `${outcome.positions_tried} positions tried, ` : outcome.settings_tested ? `${outcome.settings_tested} settings tested, ` : "";
+  const detail = outcome.error
+    ? `<span class="bad-text">not possible: ${escape(outcome.error)}</span>`
+    : outcome.result
+      ? `${tried}worst point ${outcome.result.worst_point_percent_of_limit}% of limit at ${outcome.result.fan_setting} air changes`
+      : "";
+  return `<li><b>${TOOL_NAMES[step.tool] ?? escape(step.tool)}</b><small>${detail}</small></li>`;
+}
+
+async function ask(text: string): Promise<void> {
+  const question = text.trim();
+  if (!question) return;
+  asking = true;
+  answer = null;
+  note = "";
+  draft = question;
+  render();
+  try {
+    conversation = [...conversation.slice(-6), { role: "user", content: question }];
+    const result = await api.ask(state, conversation);
+    conversation = [...conversation, { role: "assistant", content: result.reply }];
+    answer = result;
+    draft = "";
+    state = result.state;
+    scene!.setMachines(state.machines);
+    verification = null;
+    explanation = null;
+    void refresh();
+  } catch (error) {
+    note = `Flowcast could not carry that out: ${(error as Error).message}`;
+  }
+  asking = false;
+  render();
 }
 
 function escape(text: string): string {
@@ -338,6 +406,18 @@ function bind(): void {
   panel.querySelector<HTMLButtonElement>("#optimise")?.addEventListener("click", () => void optimise());
   panel.querySelector<HTMLButtonElement>("#verify")?.addEventListener("click", () => void verify());
   panel.querySelector<HTMLButtonElement>("#explain")?.addEventListener("click", () => void explain());
+  const question = panel.querySelector<HTMLTextAreaElement>("#question");
+  question?.addEventListener("input", () => (draft = question.value));
+  question?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void ask(question.value);
+    }
+  });
+  panel.querySelector<HTMLButtonElement>("#ask")?.addEventListener("click", () => void ask(question?.value ?? ""));
+  panel.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((button) =>
+    button.addEventListener("click", () => void ask(EXAMPLES[Number(button.dataset.example)])),
+  );
   panel.querySelector<HTMLButtonElement>("#tour")?.addEventListener("click", () => startTutorial(view, panel));
 }
 
