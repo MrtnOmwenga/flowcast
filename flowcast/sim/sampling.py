@@ -9,7 +9,7 @@ from .spec import CaseSpec, Machine, Room
 
 # Footprint and height in metres of the equipment types a room can contain.
 CATALOGUE = {
-    "workbench": (1.6, 0.8, 0.9),
+    "workbench": (1.6, 0.8, 1.0),
     "cabinet": (0.8, 0.6, 1.8),
     "filling machine": (1.2, 1.0, 1.4),
     "small unit": (0.6, 0.6, 1.0),

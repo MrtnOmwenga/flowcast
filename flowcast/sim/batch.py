@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -31,6 +32,7 @@ def run_batch(specs: list[CaseSpec], out: Path, workers: int, prefix: str = "cas
         if (case_dir / RESULT_NAME).exists():
             results.append(case_dir / RESULT_NAME)
         else:
+            shutil.rmtree(case_dir, ignore_errors=True)  # leftovers from an interrupted run
             todo.append((case_dir, spec))
     print(f"{len(results)} already finished, {len(todo)} to run on {workers} workers", flush=True)
 

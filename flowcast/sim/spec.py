@@ -57,16 +57,18 @@ class Room:
     """Room size, grid spacing and the fixed supply and extract openings."""
 
     size: tuple[float, float, float] = (6.0, 4.0, 3.0)
-    cell: float = 0.1
+    # 0.2 m cells keep each simulation small enough to settle fully and to run in about a
+    # minute. A finer grid resolves the supply jets better but costs far more per room.
+    cell: float = 0.2
     # Ceiling supply panels: (x, y, sx, sy)
     supplies: tuple[tuple[float, float, float, float], ...] = (
-        (1.0, 0.5, 1.0, 1.0),
-        (4.0, 0.5, 1.0, 1.0),
-        (1.0, 2.5, 1.0, 1.0),
-        (4.0, 2.5, 1.0, 1.0),
+        (1.0, 0.4, 1.0, 1.0),
+        (4.0, 0.4, 1.0, 1.0),
+        (1.0, 2.6, 1.0, 1.0),
+        (4.0, 2.6, 1.0, 1.0),
     )
     # Low wall extracts on the two end walls (x = 0 and x = size[0]): y range and height
-    extract_y: tuple[float, float] = (0.5, 3.5)
+    extract_y: tuple[float, float] = (0.4, 3.6)
     extract_height: float = 0.4
 
     @property
@@ -90,7 +92,7 @@ class CaseSpec:
     ach: float = 20.0  # air changes per hour delivered by the fans
     room: Room = field(default_factory=Room)
     steps: int = 2000
-    average_last: int = 500
+    average_last: int = 1000
 
     @property
     def flow_rate(self) -> float:
