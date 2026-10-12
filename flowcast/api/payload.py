@@ -38,6 +38,7 @@ def build(
             "supplies": [list(s) for s in room.supplies],
             "extract_y": list(room.extract_y),
             "extract_height": room.extract_height,
+            "extract_walls": list(room.extract_walls),
         },
         "machines": [asdict(m) for m in spec.machines],
         "assumptions": asdict(assumptions),

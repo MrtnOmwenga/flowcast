@@ -70,6 +70,12 @@ class Room:
     # Low wall extracts on the two end walls (x = 0 and x = size[0]): y range and height
     extract_y: tuple[float, float] = (0.4, 3.6)
     extract_height: float = 0.4
+    # Extracts on one end wall only. With extracts on both ends the room is symmetric and the
+    # supply jets settle into one of several lopsided patterns; which one depends on tiny
+    # changes in layout, so moving a machine 0.2 m could change the whole room's airflow by
+    # more than half. A single return wall gives the air one way out and a pattern that
+    # shifts smoothly as the layout changes.
+    extract_walls: tuple[str, ...] = ("x0",)
 
     @property
     def shape(self) -> tuple[int, int, int]:
@@ -92,6 +98,7 @@ class CaseSpec:
     ach: float = 20.0  # air changes per hour delivered by the fans
     room: Room = field(default_factory=Room)
     steps: int = 2000
+    convection: str = "linearUpwind"  # scheme for the momentum equation: "linearUpwind" or "upwind"
     average_last: int = 1000
 
     @property
@@ -135,8 +142,9 @@ class CaseSpec:
             room_data["size"] = tuple(room_data["size"])
         if "supplies" in room_data:
             room_data["supplies"] = tuple(tuple(s) for s in room_data["supplies"])
-        if "extract_y" in room_data:
-            room_data["extract_y"] = tuple(room_data["extract_y"])
+        for key in ("extract_y", "extract_walls"):
+            if key in room_data:
+                room_data[key] = tuple(room_data[key])
         machines = tuple(Machine(**m) for m in data.get("machines", ()))
         rest = {k: v for k, v in data.items() if k not in ("room", "machines")}
         return cls(machines=machines, room=Room(**room_data), **rest)

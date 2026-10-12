@@ -58,12 +58,19 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--mirror", action=argparse.BooleanOptionalAction, default=None,
+                        help="mirror training rooms at random (default: particles yes, flow no)")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     names = CHANNELS[args.task]
-    train = RoomDataset(args.data, "train", args.task, augment=True)
+    # The simulated airflow in this symmetric room settles into a lopsided pattern, always the
+    # same way round. A mirrored room would pair the same layout with the opposite pattern, so
+    # mirroring is off for the flow network. The particle network is given the airflow, so a
+    # mirrored sample is still consistent for it.
+    mirror = args.mirror if args.mirror is not None else args.task == "particles"
+    train = RoomDataset(args.data, "train", args.task, augment=mirror)
     validation = RoomDataset(args.data, "validation", args.task)
     print(f"device {device}; {len(train.cases)} training rooms ({len(train)} samples), "
           f"{len(validation.cases)} validation rooms ({len(validation)} samples)", flush=True)

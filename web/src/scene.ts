@@ -140,7 +140,9 @@ export class RoomScene {
     }
     const extractMaterial = new THREE.MeshBasicMaterial({ color: 0x8f9bb3, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
     const [y0, y1] = room.extract_y;
-    for (const x of [0.01, lx - 0.01]) {
+    const walls: [string, number][] = [["x0", 0.01], ["x1", lx - 0.01]];
+    for (const [name, x] of walls) {
+      if (!room.extract_walls.includes(name)) continue;
       const vent = new THREE.Mesh(new THREE.PlaneGeometry(y1 - y0, room.extract_height), extractMaterial);
       vent.rotation.y = Math.PI / 2;
       this.toWorld(x, (y0 + y1) / 2, room.extract_height / 2, vent.position);

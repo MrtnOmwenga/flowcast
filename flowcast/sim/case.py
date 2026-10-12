@@ -47,7 +47,7 @@ def write_case(spec: CaseSpec, case_dir: Path) -> None:
         "system/topoSetDict.sources": _topo_sources(spec),
         "system/createPatchDict": _create_patch(),
         "system/controlDict": _control(spec),
-        "system/fvSchemes": _FV_SCHEMES,
+        "system/fvSchemes": _FV_SCHEMES.replace("@CONVECTION@", _CONVECTION[spec.convection]),
         "system/fvSolution": _FV_SOLUTION,
         "constant/transportProperties": f"transportModel Newtonian;\nnu {NU_AIR};\n",
         "constant/turbulenceProperties": "simulationType RAS;\nRAS { RASModel kEpsilon; turbulence on; printCoeffs off; }\n",
@@ -123,7 +123,8 @@ def _topo_faces(spec: CaseSpec) -> str:
             f"box ({x} {y} {lz - EPS})({x + sx} {y + sy} {lz + EPS}); }}"
         )
     y0, y1 = room.extract_y
-    for i, x in enumerate((0.0, lx)):
+    walls = [x for name, x in (("x0", 0.0), ("x1", lx)) if name in room.extract_walls]
+    for i, x in enumerate(walls):
         action = "new" if i == 0 else "add"
         actions.append(
             f"    {{ name outletFaces; type faceSet; action {action}; source boxToFace; "
@@ -225,7 +226,7 @@ gradSchemes { default Gauss linear; }
 divSchemes
 {
     default none;
-    div(phi,U) bounded Gauss linearUpwind grad(U);
+    div(phi,U) @CONVECTION@;
     div(phi,k) bounded Gauss upwind;
     div(phi,epsilon) bounded Gauss upwind;
     div(phi,s) bounded Gauss upwind;
@@ -235,6 +236,11 @@ laplacianSchemes { default Gauss linear corrected; }
 interpolationSchemes { default linear; }
 snGradSchemes { default corrected; }
 """
+
+_CONVECTION = {
+    "linearUpwind": "bounded Gauss linearUpwind grad(U)",
+    "upwind": "bounded Gauss upwind",
+}
 
 _FV_SOLUTION = """solvers
 {

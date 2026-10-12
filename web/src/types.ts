@@ -40,6 +40,7 @@ export interface RoomInfo {
   supplies: [number, number, number, number][];
   extract_y: [number, number];
   extract_height: number;
+  extract_walls: string[];
 }
 
 export interface Payload {
