@@ -10,3 +10,7 @@ __pycache__/
 node_modules/
 dist/
 .venv-rocm/
+
+# Keys and local settings: never commit
+.env
+.env.*

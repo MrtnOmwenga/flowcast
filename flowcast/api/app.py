@@ -21,7 +21,8 @@ from ..model.predict import Ensemble, Prediction
 from ..sim.runner import run_case
 from ..sim.rooms import DEFAULT_ROOM, ROOMS
 from ..sim.spec import CaseSpec, Machine
-from . import payload
+from . import explain as explaining
+from . import llm, payload
 from .metrics import Assumptions, protected_zone, summarise
 
 MODELS = Path(os.environ.get("FLOWCAST_MODELS", "data/models"))
@@ -104,7 +105,8 @@ def respond(spec: CaseSpec, prediction: Prediction, seconds: float) -> dict:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"models": ensemble.members, "device": str(ensemble.device), "hardware": HARDWARE, **ensemble.meta}
+    return {"models": ensemble.members, "device": str(ensemble.device), "hardware": HARDWARE,
+            "language_model": llm.model_name() if llm.available() else None, **ensemble.meta}
 
 
 @app.post("/api/predict")
@@ -118,6 +120,37 @@ def predict(state: RoomState) -> dict:
 def _within_limit(spec: CaseSpec, prediction: Prediction) -> bool:
     """Whether the worst point is under the limit with the safety margin to spare."""
     return summarise(spec, prediction.fluid, prediction.particles, prediction.age, ASSUMPTIONS)["safe"]
+
+
+def lowest_safe(base: CaseSpec) -> tuple[float | None, int]:
+    """Bisect the fan settings for the lowest that is safe. Returns it and how many were tested."""
+    low, high = base.room.ach_range
+    settings = [float(ach) for ach in np.linspace(low, high, 137)]
+    specs = [CaseSpec(machines=base.machines, ach=ach, room=base.room) for ach in settings]
+    tested = 1
+    if not _within_limit(specs[-1], ensemble.predict(specs[-1])):
+        return None, tested
+    lo, hi = 0, len(specs) - 1  # the answer lies in [lo, hi]; hi passes
+    while lo < hi:
+        middle = (lo + hi) // 2
+        tested += 1
+        if _within_limit(specs[middle], ensemble.predict(specs[middle])):
+            hi = middle
+        else:
+            lo = middle + 1
+    return settings[hi], tested
+
+
+@app.post("/api/explain")
+def explain(state: RoomState) -> dict:
+    """A plain-language account of the current room, written by a language model on AMD GPUs."""
+    spec = state.spec()
+    prediction = ensemble.predict(spec)
+    best, _ = lowest_safe(spec)
+    try:
+        return explaining.explain(spec, prediction, ASSUMPTIONS, best)
+    except llm.LanguageModelError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.post("/api/optimise")
@@ -138,19 +171,8 @@ def optimise(state: RoomState) -> dict:
         best = next((i for i, ok in enumerate(passing) if ok), None)
         tested = len(specs)
     else:
-        tested = 1
-        if not _within_limit(specs[-1], ensemble.predict(specs[-1])):
-            best = None
-        else:
-            low, high = 0, len(specs) - 1  # the answer lies in [low, high]; high passes
-            while low < high:
-                middle = (low + high) // 2
-                tested += 1
-                if _within_limit(specs[middle], ensemble.predict(specs[middle])):
-                    high = middle
-                else:
-                    low = middle + 1
-            best = high
+        found, tested = lowest_safe(base)
+        best = settings.index(found) if found is not None else None
     return {
         "ach": settings[best] if best is not None else settings[-1],
         "feasible": best is not None,

@@ -1,4 +1,4 @@
-import { api, type Verification } from "./api";
+import { api, type Explanation, type Verification } from "./api";
 import { Fields } from "./field";
 import { RoomScene, overlaps, type SliceMode } from "./scene";
 import { startTutorial } from "./tutorial";
@@ -33,6 +33,9 @@ let sliceHeight = 1.1;
 let busy = "";
 let note = "";
 let verification: Verification | null = null;
+let explanation: Explanation | null = null;
+let explaining = false;
+let languageModel: string | null = null;
 let people = false; // whether the served models were trained on rooms with people
 
 // Only one prediction request runs at a time; a newer state replaces any that is waiting.
@@ -47,6 +50,7 @@ export function mount(root: HTMLElement): void {
   scene = new RoomScene(view);
   scene.onMove = (machines, finished) => {
     state = { ...state, machines };
+    explanation = null;
     if (finished) render();
     verification = null;
     void refresh();
@@ -97,6 +101,7 @@ function apply(result: Payload, current: boolean): void {
 
 function changed(layoutChanged: boolean): void {
   verification = null;
+  explanation = null;
   note = "";
   if (!layoutChanged && fields) {
     // Switching a machine on or off needs no new prediction: its field is already loaded.
@@ -204,6 +209,8 @@ function render(): void {
         ${confidence === undefined ? "" : `<dt>Model confidence</dt><dd class="${confidence < 0.6 ? "amber" : ""}">${confidence < 0.6 ? "Low: verify before relying on it" : "Good"}</dd>`}
       </dl>
       <p class="muted small">The red marker is the worst point: the place for a particle counter.</p>
+      ${languageModel ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button></div>` : ""}
+      ${explanation ? `<div class="explanation">${explanation.text.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute">${escape(explanation.model)} on ${escape(explanation.hosted_on)}</p></div>` : ""}
       <p class="compute">${payload.source !== "model" || !payload.compute ? "OpenFOAM simulation" : `${payload.compute.models} models on ${payload.compute.hardware} · ${number(payload.compute.seconds * 1000)} ms`}</p>
     </section>
 
@@ -242,6 +249,23 @@ function render(): void {
   bind();
 }
 
+function escape(text: string): string {
+  return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+async function explain(): Promise<void> {
+  explaining = true;
+  explanation = null;
+  render();
+  try {
+    explanation = await api.explain(state);
+  } catch (error) {
+    note = `The explanation is not available: ${(error as Error).message}`;
+  }
+  explaining = false;
+  render();
+}
+
 function verificationHtml(): string {
   const v = verification;
   if (!v) return "";
@@ -271,6 +295,7 @@ function bind(): void {
     // Update the label in place so the slider keeps the pointer while it is dragged.
     ach.previousElementSibling!.querySelector("b")!.textContent = number(state.ach, 1);
     verification = null;
+    explanation = null;
     void refresh();
   });
   ach.addEventListener("change", () => render());
@@ -312,6 +337,7 @@ function bind(): void {
   });
   panel.querySelector<HTMLButtonElement>("#optimise")?.addEventListener("click", () => void optimise());
   panel.querySelector<HTMLButtonElement>("#verify")?.addEventListener("click", () => void verify());
+  panel.querySelector<HTMLButtonElement>("#explain")?.addEventListener("click", () => void explain());
   panel.querySelector<HTMLButtonElement>("#tour")?.addEventListener("click", () => startTutorial(view, panel));
 }
 
@@ -360,7 +386,9 @@ async function start(): Promise<void> {
   scene!.setSlice(sliceMode, sliceHeight);
   apply(sample, true);
   try {
-    people = (await api.health()).people === true;
+    const health = await api.health();
+    people = health.people === true;
+    languageModel = health.language_model ?? null;
     apply(await api.predict(state), true);
     online = true;
   } catch {

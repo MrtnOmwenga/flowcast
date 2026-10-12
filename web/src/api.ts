@@ -35,9 +35,17 @@ export interface Health {
   models: number;
   device: string;
   people?: boolean;
+  language_model?: string | null;
+}
+
+export interface Explanation {
+  text: string;
+  model: string;
+  hosted_on: string;
 }
 
 export const api = {
+  explain: (state: RoomState) => post<Explanation>("/api/explain", state),
   health: async (): Promise<Health> => (await fetch(`${BASE}/api/health`)).json(),
   /** A stored simulation, used to start the page before the service answers. */
   sample: async (): Promise<Payload> => (await fetch("/sample.json")).json(),
