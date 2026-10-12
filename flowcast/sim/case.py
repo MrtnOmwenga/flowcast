@@ -106,10 +106,9 @@ def _topo_cells(spec: CaseSpec) -> str:
 
 
 def _source_box(spec: CaseSpec, index: int) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """Two layers of cells directly above a machine, where its particles are released."""
-    b = spec.machines[index].box
-    top = b.hi[2]
-    return (b.x, b.y, top), (b.hi[0], b.hi[1], top + 2 * spec.room.cell)
+    """Where an item's particles are released. Cells inside any solid no longer exist."""
+    box = spec.machines[index].source_box(spec.room.cell, spec.room.size)
+    return box.lo, box.hi
 
 
 def _topo_faces(spec: CaseSpec) -> str:

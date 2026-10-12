@@ -49,10 +49,11 @@ class MachineIn(BaseModel):
     sz: float
     on: bool = True
     emission: float = Field(default=1.0, ge=0)
+    kind: str = "machine"
 
 
 class RoomState(BaseModel):
-    machines: list[MachineIn] = Field(default_factory=list, max_length=3)
+    machines: list[MachineIn] = Field(default_factory=list, max_length=5)
     ach: float = Field(ge=ACH_RANGE[0], le=ACH_RANGE[1])
 
     def spec(self) -> CaseSpec:

@@ -18,6 +18,7 @@ class Assumptions:
     full_fan_power_kw: float = 3.0  # fan power at that setting
     particle_limit: float = 352_000.0  # particles of 0.5 micrometres and larger per cubic metre (ISO class 7)
     machine_emission: float = 6_000.0  # particles per second released by a running machine
+    person_emission: float = 5_000.0  # particles per second shed by a person at work in the room
     occupied_height: float = 1.8  # the limit applies from the floor up to this height
     stagnant_age_factor: float = 1.5  # air older than this many ideal air changes counts as stagnant
     electricity_price: float = 0.15  # US dollars per kWh
@@ -25,6 +26,14 @@ class Assumptions:
     # A setting is recommended only if the predicted worst point is this far under the limit,
     # which is roughly the model's error at the worst point.
     safety_margin: float = 0.15
+
+
+def release_rate(machine, a: Assumptions) -> float:
+    """Particles per second an item releases in its current state."""
+    if not machine.on:
+        return 0.0
+    usual = a.person_emission if machine.kind == "person" else a.machine_emission
+    return usual * machine.emission
 
 
 def fan_power_kw(ach: float, a: Assumptions) -> float:
@@ -51,7 +60,7 @@ def protected_zone(spec: CaseSpec, fluid: np.ndarray, a: Assumptions) -> np.ndar
 
 def summarise(spec: CaseSpec, fluid: np.ndarray, particles: np.ndarray, age: np.ndarray, a: Assumptions) -> dict:
     """Readouts for one room state. `particles` holds one unit-release field per machine."""
-    weights = np.array([a.machine_emission * m.emission if m.on else 0.0 for m in spec.machines], dtype=np.float32)
+    weights = np.array([release_rate(m, a) for m in spec.machines], dtype=np.float32)
     level = np.tensordot(weights, particles, axes=1) if len(weights) else np.zeros(fluid.shape, dtype=np.float32)
     zone = protected_zone(spec, fluid, a)
     worst_index = np.unravel_index(np.argmax(np.where(zone, level, -1.0)), level.shape)

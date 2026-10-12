@@ -31,12 +31,17 @@ class Box:
         return all(a_lo < b_hi and b_lo < a_hi for a_lo, a_hi, b_lo, b_hi in zip(self.lo, self.hi, other.lo, other.hi))
 
 
+KINDS = ("machine", "person")
+
+
 @dataclass(frozen=True)
 class Machine:
-    """A piece of equipment standing on the floor. It releases particles while it is on.
+    """Something standing on the floor that releases particles: a piece of equipment or a person.
 
-    The simulation computes each machine's particle field for a unit release rate, whatever
-    `on` and `emission` say; combine them with `particle_level` to get a room state.
+    A machine releases its particles into the air just above it. A person sheds them from
+    the whole body, so theirs are released into the air all around them. The simulation
+    computes each item's particle field for a unit release rate, whatever `on` and
+    `emission` say.
     """
 
     x: float
@@ -45,11 +50,29 @@ class Machine:
     sy: float
     sz: float
     on: bool = False
-    emission: float = 1.0  # particle release rate while on, in arbitrary units per second
+    emission: float = 1.0  # release rate while on, as a multiple of the usual rate for its kind
+    kind: str = "machine"  # "machine" or "person"
 
     @property
     def box(self) -> Box:
         return Box(self.x, self.y, 0.0, self.sx, self.sy, self.sz)
+
+    def source_box(self, cell: float, room_size: tuple[float, float, float]) -> Box:
+        """The region its particles are released into, clipped to the room.
+
+        For a person this box contains the body itself; the body is solid, so only the air
+        around it receives particles.
+        """
+        b = self.box
+        if self.kind == "person":
+            lo = (b.x - cell, b.y - cell, 0.0)
+            hi = (b.hi[0] + cell, b.hi[1] + cell, b.hi[2] + cell)
+        else:
+            lo = (b.x, b.y, b.hi[2])
+            hi = (b.hi[0], b.hi[1], b.hi[2] + 2 * cell)
+        lo = tuple(max(0.0, v) for v in lo)
+        hi = tuple(min(limit, v) for v, limit in zip(hi, room_size))
+        return Box(*lo, *(h - l for l, h in zip(lo, hi)))
 
 
 @dataclass(frozen=True)
@@ -122,7 +145,10 @@ class CaseSpec:
             if any(lo < 0 for lo in box.lo) or any(hi > s for hi, s in zip(box.hi, room.size)):
                 raise ValueError(f"machine outside the room: {box}")
             if box.hi[2] + 2 * cell > room.size[2]:
-                raise ValueError(f"machine too tall to leave room for its particle source: {box}")
+                raise ValueError(f"item too tall to leave room for its particle source: {box}")
+        for machine in self.machines:
+            if machine.kind not in KINDS:
+                raise ValueError(f"unknown kind of item: {machine.kind}")
         for i, a in enumerate(boxes):
             for b in boxes[i + 1 :]:
                 if a.overlaps(b):

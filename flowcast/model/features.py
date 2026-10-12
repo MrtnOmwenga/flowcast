@@ -43,12 +43,11 @@ def solid_mask(spec: CaseSpec) -> np.ndarray:
 
 
 def source_mask(spec: CaseSpec, index: int) -> np.ndarray:
-    """1 in the cells just above one machine, where its particles are released."""
-    box = spec.machines[index].box
-    top = box.hi[2]
+    """1 in the air cells where one item's particles are released."""
+    box = spec.machines[index].source_box(spec.room.cell, spec.room.size)
     mask = np.zeros(spec.room.shape, dtype=np.float32)
-    mask[_cells(spec, (box.x, box.y, top), (box.hi[0], box.hi[1], top + 2 * spec.room.cell))] = 1.0
-    return mask
+    mask[_cells(spec, box.lo, box.hi)] = 1.0
+    return mask * (1.0 - solid_mask(spec))
 
 
 def _common(spec: CaseSpec) -> list[np.ndarray]:
