@@ -88,24 +88,46 @@ def predict(state: RoomState) -> dict:
     return respond(spec, ensemble.predict(spec))
 
 
+def _within_limit(spec: CaseSpec, prediction: Prediction) -> bool:
+    return summarise(spec, prediction.fluid, prediction.particles, prediction.age, ASSUMPTIONS)["within_limit"]
+
+
 @app.post("/api/optimise")
 def optimise(state: RoomState) -> dict:
-    """The lowest fan setting that keeps the worst point within the limit, by testing every setting."""
+    """The lowest fan setting that keeps the worst point within the limit.
+
+    On a GPU every setting is predicted in one batch. On a processor that takes too long
+    for an interactive page, so the settings are bisected instead, which assumes that more
+    air never makes the worst point worse.
+    """
     base = state.spec()
     started = time.perf_counter()
-    settings = np.arange(ACH_RANGE[0], ACH_RANGE[1] + 1e-9, 0.25)
-    specs = [CaseSpec(machines=base.machines, ach=float(ach)) for ach in settings]
-    best = None
-    for spec, prediction in zip(specs, ensemble.predict_many(specs)):
-        metrics = summarise(spec, prediction.fluid, prediction.particles, prediction.age, ASSUMPTIONS)
-        if metrics["within_limit"]:
-            best = spec.ach
-            break
+    settings = [float(ach) for ach in np.arange(ACH_RANGE[0], ACH_RANGE[1] + 1e-9, 0.25)]
+    specs = [CaseSpec(machines=base.machines, ach=ach) for ach in settings]
+    if ensemble.device.type == "cuda":
+        passing = [_within_limit(s, p) for s, p in zip(specs, ensemble.predict_many(specs))]
+        best = next((i for i, ok in enumerate(passing) if ok), None)
+        tested = len(specs)
+    else:
+        tested = 1
+        if not _within_limit(specs[-1], ensemble.predict(specs[-1])):
+            best = None
+        else:
+            low, high = 0, len(specs) - 1  # the answer lies in [low, high]; high passes
+            while low < high:
+                middle = (low + high) // 2
+                tested += 1
+                if _within_limit(specs[middle], ensemble.predict(specs[middle])):
+                    high = middle
+                else:
+                    low = middle + 1
+            best = high
     return {
-        "ach": best if best is not None else float(settings[-1]),
+        "ach": settings[best] if best is not None else settings[-1],
         "feasible": best is not None,
-        "tested": len(settings),
+        "tested": tested,
         "seconds": time.perf_counter() - started,
+        "device": ensemble.device.type,
     }
 
 
