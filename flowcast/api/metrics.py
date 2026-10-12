@@ -17,7 +17,7 @@ class Assumptions:
     full_ach: float = 40.0  # the fan setting the room runs at today
     full_fan_power_kw: float = 3.0  # fan power at that setting
     particle_limit: float = 352_000.0  # particles of 0.5 micrometres and larger per cubic metre (ISO class 7)
-    machine_emission: float = 60_000.0  # particles per second released by a running machine
+    machine_emission: float = 6_000.0  # particles per second released by a running machine
     occupied_height: float = 1.8  # the limit applies from the floor up to this height
     stagnant_age_factor: float = 2.0  # air older than this many ideal air changes counts as a dead zone
     electricity_price: float = 0.15  # US dollars per kWh
@@ -38,13 +38,10 @@ def protected_zone(spec: CaseSpec, fluid: np.ndarray, a: Assumptions) -> np.ndar
     zone = fluid.copy()
     zone[:, :, round(a.occupied_height / spec.room.cell) :] = False
     for i in range(len(spec.machines)):
-        padded = np.pad(features.source_mask(spec, i) > 0, 1)
-        grown = padded.copy()
+        # grow the release cells by one cell in every direction, diagonals included
+        grown = np.pad(features.source_mask(spec, i) > 0, 1)
         for axis in range(3):
-            grown |= np.roll(padded, 1, axis) | np.roll(padded, -1, axis)
-        # one cell in every direction, diagonals included, to match the interface
-        for axis in range(3):
-            grown |= np.roll(grown, 1, axis) | np.roll(grown, -1, axis)
+            grown = grown | np.roll(grown, 1, axis) | np.roll(grown, -1, axis)
         zone &= ~grown[1:-1, 1:-1, 1:-1]
     return zone
 
