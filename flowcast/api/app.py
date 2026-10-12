@@ -37,8 +37,25 @@ SPREAD_AT_ZERO_CONFIDENCE = 0.1
 app = FastAPI(title="Flowcast")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 ensemble = Ensemble(MODELS)
+SWEEP = os.environ.get("FLOWCAST_SWEEP") == "1"
+# Shown beside every answer. Set FLOWCAST_HARDWARE to name the exact card.
+HARDWARE = os.environ.get("FLOWCAST_HARDWARE", ensemble.hardware)
 simulations = ThreadPoolExecutor(max_workers=int(os.environ.get("FLOWCAST_SIMULATIONS", "3")))
 jobs: dict[str, dict] = {}
+
+
+def warm_up() -> None:
+    """Run each batch size once so the GPU's first real answer is not slowed by set-up."""
+    room = ROOMS[DEFAULT_ROOM]
+    box = Machine(x=1.0, y=1.0, sx=0.6, sy=0.6, sz=1.0, on=True)
+    ensemble.predict(CaseSpec(room=room))
+    ensemble.predict(CaseSpec(machines=(box,), room=room))
+    if SWEEP:
+        ensemble.predict_many([CaseSpec(machines=(box,), ach=a, room=room) for a in np.linspace(*room.ach_range, 137)])
+
+
+if ensemble.device.type == "cuda":
+    warm_up()
 
 
 class MachineIn(BaseModel):
@@ -74,24 +91,28 @@ def confidence(spec: CaseSpec, prediction: Prediction) -> float:
     return max(0.0, 1.0 - spread / SPREAD_AT_ZERO_CONFIDENCE)
 
 
-def respond(spec: CaseSpec, prediction: Prediction) -> dict:
+def respond(spec: CaseSpec, prediction: Prediction, seconds: float) -> dict:
     body = payload.build(
         spec, prediction.fluid, prediction.velocity, prediction.particles, prediction.age,
         ASSUMPTIONS, uncertainty=prediction.spread, source="model",
     )
     body["metrics"]["confidence"] = confidence(spec, prediction)
+    body["compute"] = {"hardware": HARDWARE, "gpu": ensemble.device.type == "cuda", "seconds": seconds,
+                       "models": ensemble.members}
     return body
 
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"models": ensemble.members, "device": str(ensemble.device), **ensemble.meta}
+    return {"models": ensemble.members, "device": str(ensemble.device), "hardware": HARDWARE, **ensemble.meta}
 
 
 @app.post("/api/predict")
 def predict(state: RoomState) -> dict:
     spec = state.spec()
-    return respond(spec, ensemble.predict(spec))
+    started = time.perf_counter()
+    prediction = ensemble.predict(spec)
+    return respond(spec, prediction, time.perf_counter() - started)
 
 
 def _within_limit(spec: CaseSpec, prediction: Prediction) -> bool:
@@ -103,16 +124,16 @@ def _within_limit(spec: CaseSpec, prediction: Prediction) -> bool:
 def optimise(state: RoomState) -> dict:
     """The lowest fan setting that keeps the worst point under the limit by the safety margin.
 
-    On a GPU every setting is predicted in one batch. On a processor that takes too long
-    for an interactive page, so the settings are bisected instead, which assumes that more
-    air never makes the worst point worse.
+    The settings are bisected, which assumes that more air never makes the worst point
+    worse and needs about eight predictions. Set FLOWCAST_SWEEP=1 on a large GPU to predict
+    every setting in one batch instead, which makes no such assumption.
     """
     base = state.spec()
     started = time.perf_counter()
     low, high = base.room.ach_range
     settings = [float(ach) for ach in np.linspace(low, high, 137)]
     specs = [CaseSpec(machines=base.machines, ach=ach, room=base.room) for ach in settings]
-    if ensemble.device.type == "cuda":
+    if SWEEP:
         passing = [_within_limit(s, p) for s, p in zip(specs, ensemble.predict_many(specs))]
         best = next((i for i, ok in enumerate(passing) if ok), None)
         tested = len(specs)
@@ -136,6 +157,7 @@ def optimise(state: RoomState) -> dict:
         "tested": tested,
         "seconds": time.perf_counter() - started,
         "device": ensemble.device.type,
+        "hardware": HARDWARE,
     }
 
 

@@ -74,6 +74,7 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 #demo { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: minmax(0, 1fr); height: calc(100vh - 56px); overflow: hidden; }
 #demo[hidden], #page[hidden] { display: none; }
 #app { display: contents; }
+.compute { display: inline-block; margin: 6px 0 0; padding: 4px 9px; border-radius: 999px; background: #fff1ee; border: 1px solid #f0a898; color: #a0321c; font-size: 12px; font-weight: 600; }
 .title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .title h1 { margin: 0; }
 button.ghost, .button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); }

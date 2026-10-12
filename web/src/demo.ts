@@ -203,7 +203,8 @@ function render(): void {
         <dt>Stagnant air</dt><dd>${number(payload.metrics.stagnant_fraction * 100, 1)}% <small>of the room</small></dd>
         ${confidence === undefined ? "" : `<dt>Model confidence</dt><dd class="${confidence < 0.6 ? "amber" : ""}">${confidence < 0.6 ? "Low: verify before relying on it" : "Good"}</dd>`}
       </dl>
-      <p class="muted small">The red marker is the worst point: the place for a particle counter. Source: ${payload.source === "model" ? "model prediction" : "OpenFOAM simulation"}.</p>
+      <p class="muted small">The red marker is the worst point: the place for a particle counter.</p>
+      <p class="compute">${payload.source !== "model" || !payload.compute ? "OpenFOAM simulation" : `${payload.compute.models} models on ${payload.compute.hardware} · ${number(payload.compute.seconds * 1000)} ms`}</p>
     </section>
 
     <section data-tour="equipment">
@@ -321,7 +322,7 @@ async function optimise(): Promise<void> {
     const best = await api.lowestSafe(state);
     busy = "";
     note = best.feasible
-      ? `Lowest safe setting: ${number(best.ach, 1)} air changes an hour (${number(best.tested)} settings tested in ${number(best.seconds, 2)} s).`
+      ? `Lowest safe setting: ${number(best.ach, 1)} air changes an hour. ${number(best.tested)} settings tested in ${number(best.seconds, 2)} s on ${best.hardware}.`
       : `No setting up to ${ACH_MAX} air changes an hour keeps this layout within the limit.`;
     state = { ...state, ach: best.ach };
     render();

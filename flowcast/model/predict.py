@@ -40,6 +40,15 @@ class Ensemble:
         meta = Path(root) / "meta.json"
         self.meta: dict = json.loads(meta.read_text()) if meta.exists() else {}
 
+    @property
+    def hardware(self) -> str:
+        """What the models are running on, for display beside every answer."""
+        if self.device.type != "cuda":
+            return "processor"
+        name = torch.cuda.get_device_name(0)
+        rocm = getattr(torch.version, "hip", None)
+        return f"{name} with ROCm {rocm.split('-')[0]}" if rocm else name
+
     def _load(self, root: Path, task: str) -> list[RoomNet]:
         names = features.CHANNELS[task]
         models = []

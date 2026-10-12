@@ -17,6 +17,7 @@ export interface Optimum {
   tested: number;
   seconds: number;
   feasible: boolean;
+  hardware: string;
 }
 
 export interface Verification {

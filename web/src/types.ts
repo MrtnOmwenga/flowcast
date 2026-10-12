@@ -48,6 +48,7 @@ export interface RoomInfo {
 
 export interface Payload {
   source: "model" | "simulation";
+  compute?: { hardware: string; gpu: boolean; seconds: number; models: number };
   grid: { shape: [number, number, number]; cell: number; size: [number, number, number] };
   room: RoomInfo;
   machines: Machine[];
