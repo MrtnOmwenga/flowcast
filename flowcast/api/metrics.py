@@ -19,7 +19,7 @@ class Assumptions:
     particle_limit: float = 352_000.0  # particles of 0.5 micrometres and larger per cubic metre (ISO class 7)
     machine_emission: float = 6_000.0  # particles per second released by a running machine
     occupied_height: float = 1.8  # the limit applies from the floor up to this height
-    stagnant_age_factor: float = 2.0  # air older than this many ideal air changes counts as a dead zone
+    stagnant_age_factor: float = 1.5  # air older than this many ideal air changes counts as stagnant
     electricity_price: float = 0.15  # US dollars per kWh
     hours_per_year: float = 8760.0
     # A setting is recommended only if the predicted worst point is this far under the limit,
