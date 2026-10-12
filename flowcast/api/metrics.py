@@ -22,6 +22,9 @@ class Assumptions:
     stagnant_age_factor: float = 2.0  # air older than this many ideal air changes counts as a dead zone
     electricity_price: float = 0.15  # US dollars per kWh
     hours_per_year: float = 8760.0
+    # A setting is recommended only if the predicted worst point is this far under the limit,
+    # which is roughly the model's error at the worst point.
+    safety_margin: float = 0.15
 
 
 def fan_power_kw(ach: float, a: Assumptions) -> float:
@@ -69,6 +72,7 @@ def summarise(spec: CaseSpec, fluid: np.ndarray, particles: np.ndarray, age: np.
         "mean_level": float(level[zone].mean()) if zone.any() else 0.0,
         "limit": a.particle_limit,
         "within_limit": bool(level[worst_index] <= a.particle_limit),
+        "safe": bool(level[worst_index] <= a.particle_limit * (1 - a.safety_margin)),
         "stagnant_fraction": float(stagnant.sum() / max(fluid.sum(), 1)),
         "ideal_age": ideal_age,
     }

@@ -34,6 +34,7 @@ export interface Assumptions {
   stagnant_age_factor: number;
   electricity_price: number;
   hours_per_year: number;
+  safety_margin: number;
 }
 
 export interface RoomInfo {

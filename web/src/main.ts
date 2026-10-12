@@ -127,7 +127,8 @@ function render(): void {
   const saving = a.full_fan_power_kw - power;
   const worst = fields.worst(state.machines);
   const ratio = worst.level / a.particle_limit;
-  const within = ratio <= 1;
+  // Within the safety margin either side of the limit, the model's error could change the answer.
+  const verdict = ratio <= 1 - a.safety_margin ? "ok" : ratio <= 1 + a.safety_margin ? "close" : "bad";
   const bar = Math.min(100, (Math.log10(Math.max(ratio, 0.01)) + 2) / 2.5 * 100);
   const stale = payload.fields.velocity !== null && !sameLayout(payload.machines, state.machines);
   const confidence = payload.metrics.confidence;
@@ -145,8 +146,8 @@ function render(): void {
     </section>
 
     <section class="readouts">
-      <div class="status ${within ? "ok" : "bad"}">${within ? "Within the particle limit" : "Over the particle limit"}${stale ? " (updating…)" : ""}</div>
-      <div class="meter"><div class="fill ${within ? "ok" : "bad"}" style="width:${bar}%"></div><div class="tick"></div></div>
+      <div class="status ${verdict}">${verdict === "ok" ? "Within the particle limit" : verdict === "close" ? "Too close to the limit to call: verify" : "Over the particle limit"}${stale ? " (updating…)" : ""}</div>
+      <div class="meter"><div class="fill ${verdict}" style="width:${bar}%"></div><div class="tick"></div></div>
       <dl>
         <dt>Worst point in the occupied zone</dt><dd>${number(worst.level)} <small>/ m³ (limit ${number(a.particle_limit)})</small></dd>
         <dt>Fan power</dt><dd>${number(power, 2)} kW <small>of ${number(a.full_fan_power_kw, 1)} kW at full speed</small></dd>

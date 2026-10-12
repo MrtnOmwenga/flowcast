@@ -29,8 +29,10 @@ VERIFY = Path(os.environ.get("FLOWCAST_VERIFY", "data/verify"))
 ASSUMPTIONS = Assumptions()
 # How far a confirming simulation may differ from the prediction at the worst point
 AGREEMENT_TOLERANCE = 0.3
-# Ensemble disagreement, in log particle level, at which confidence reaches zero
-SPREAD_AT_ZERO_CONFIDENCE = 0.5
+# Ensemble disagreement, in log particle level, at which confidence reaches zero. Calibrated
+# on held-out rooms: confidence below 0.6 marks the fifth of rooms where the members disagree
+# most, and those rooms carry about twice the error of the rest.
+SPREAD_AT_ZERO_CONFIDENCE = 0.1
 
 app = FastAPI(title="Flowcast")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -89,12 +91,13 @@ def predict(state: RoomState) -> dict:
 
 
 def _within_limit(spec: CaseSpec, prediction: Prediction) -> bool:
-    return summarise(spec, prediction.fluid, prediction.particles, prediction.age, ASSUMPTIONS)["within_limit"]
+    """Whether the worst point is under the limit with the safety margin to spare."""
+    return summarise(spec, prediction.fluid, prediction.particles, prediction.age, ASSUMPTIONS)["safe"]
 
 
 @app.post("/api/optimise")
 def optimise(state: RoomState) -> dict:
-    """The lowest fan setting that keeps the worst point within the limit.
+    """The lowest fan setting that keeps the worst point under the limit by the safety margin.
 
     On a GPU every setting is predicted in one batch. On a processor that takes too long
     for an interactive page, so the settings are bisected instead, which assumes that more

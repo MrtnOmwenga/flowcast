@@ -37,10 +37,12 @@ select { width: 100%; background: var(--bg); color: var(--text); border: 1px sol
 .status { font-weight: 700; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; }
 .status.ok { background: #12352a; color: var(--ok); }
 .status.bad { background: #3d1a14; color: var(--bad); }
+.status.close { background: #3a2a14; color: var(--amber); }
 .meter { position: relative; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
 .meter .fill { height: 100%; }
 .meter .fill.ok { background: var(--ok); }
 .meter .fill.bad { background: var(--bad); }
+.meter .fill.close { background: var(--amber); }
 .meter .tick { position: absolute; left: 80%; top: 0; bottom: 0; width: 2px; background: var(--text); }
 dl { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 0; }
 dt { color: var(--muted); font-size: 12px; margin-top: 6px; }

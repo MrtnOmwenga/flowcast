@@ -58,19 +58,27 @@ class Ensemble:
 
     @torch.no_grad()
     def predict_many(self, specs: list[CaseSpec]) -> list[Prediction]:
-        fluids = [features.solid_mask(spec) < 0.5 for spec in specs]
-        flow = self._run(self.flow, np.stack([features.flow_inputs(spec) for spec in specs])).mean(axis=0)
+        """Each member is a flow network chained to a particle network.
 
-        particle_inputs = []
-        owners = []
-        for i, (spec, fluid) in enumerate(zip(specs, fluids)):
-            for machine in range(len(spec.machines)):
-                particle_inputs.append(features.particle_inputs(spec, machine, flow[i, 0:3] * fluid))
-                owners.append(i)
-        if particle_inputs:
-            raw = self._run(self.particles, np.stack(particle_inputs))[:, :, 0]  # (members, samples, nx, ny, nz)
+        A member's particle network is given that member's own airflow, so the disagreement
+        between members reflects uncertainty in the airflow as well as in the particles.
+        """
+        fluids = [features.solid_mask(spec) < 0.5 for spec in specs]
+        members = self.members
+        flows = self._run(self.flow[:members], np.stack([features.flow_inputs(spec) for spec in specs]))
+        flow = flows.mean(axis=0)
+
+        owners = np.array([i for i, spec in enumerate(specs) for _ in spec.machines], dtype=int)
+        if len(owners):
+            raw = np.stack([
+                self._run([self.particles[k]], np.stack([
+                    features.particle_inputs(spec, machine, flows[k, i, 0:3] * fluid)
+                    for i, (spec, fluid) in enumerate(zip(specs, fluids))
+                    for machine in range(len(spec.machines))
+                ]))[0, :, 0]
+                for k in range(members)
+            ])  # (members, samples, nx, ny, nz)
             mean, spread = raw.mean(axis=0), raw.std(axis=0)
-        owners = np.array(owners)
 
         predictions = []
         for i, (spec, fluid) in enumerate(zip(specs, fluids)):
