@@ -11,7 +11,7 @@ const TRACERS = 7000;
 const CLEAN = new THREE.Color(0x1f7ae0);
 const DIRTY = new THREE.Color(0xe0401f);
 const BACKGROUND = 0xeef1f5;
-const MARKER = 0x6d28d9;
+const MARKER = 0xd92d20;
 
 /**
  * The room is simulated with x along its length, y across it and z up. three.js has y up,
@@ -103,7 +103,14 @@ export class RoomScene {
     element.addEventListener("pointerleave", () => this.pointerUp());
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize();
-    this.renderer.setAnimationLoop(() => this.frame());
+    this.setActive(true);
+  }
+
+  /** Stop drawing while the demo is not on screen, and resume when it is. */
+  setActive(active: boolean): void {
+    this.clock.getDelta();
+    this.renderer.setAnimationLoop(active ? () => this.frame() : null);
+    if (active) this.resize();
   }
 
   private toWorld(x: number, y: number, z: number, out = new THREE.Vector3()): THREE.Vector3 {
