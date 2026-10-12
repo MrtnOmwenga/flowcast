@@ -19,6 +19,7 @@ import numpy as np
 
 from .export import RESULT_NAME
 from .runner import run_case
+from .rooms import DEFAULT_ROOM, ROOMS
 from .sampling import sample_specs
 from .spec import CaseSpec
 
@@ -83,6 +84,7 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--average-last", type=int, default=None)
     parser.add_argument("--prefix", default="case", help="case folder prefix; use a new one for each seed")
+    parser.add_argument("--room", choices=tuple(ROOMS), default=DEFAULT_ROOM, help="which room design to simulate")
     args = parser.parse_args()
 
     overrides = {}
@@ -90,7 +92,8 @@ def main() -> None:
         overrides["steps"] = args.steps
     if args.average_last is not None:
         overrides["average_last"] = args.average_last
-    run_batch(sample_specs(args.count, args.seed, **overrides), args.out, args.workers, prefix=args.prefix)
+    specs = sample_specs(args.count, args.seed, room=ROOMS[args.room], **overrides)
+    run_batch(specs, args.out, args.workers, prefix=args.prefix)
 
 
 if __name__ == "__main__":

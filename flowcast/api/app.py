@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from ..model.predict import Ensemble, Prediction
 from ..sim.runner import run_case
-from ..sim.sampling import ACH_RANGE
+from ..sim.rooms import DEFAULT_ROOM, ROOMS
 from ..sim.spec import CaseSpec, Machine
 from . import payload
 from .metrics import Assumptions, protected_zone, summarise
@@ -54,11 +54,14 @@ class MachineIn(BaseModel):
 
 class RoomState(BaseModel):
     machines: list[MachineIn] = Field(default_factory=list, max_length=5)
-    ach: float = Field(ge=ACH_RANGE[0], le=ACH_RANGE[1])
+    ach: float = Field(gt=0)
 
     def spec(self) -> CaseSpec:
-        spec = CaseSpec(machines=tuple(Machine(**m.model_dump()) for m in self.machines), ach=self.ach)
+        room = ROOMS[DEFAULT_ROOM]
+        spec = CaseSpec(machines=tuple(Machine(**m.model_dump()) for m in self.machines), ach=self.ach, room=room)
         try:
+            if not room.ach_range[0] <= self.ach <= room.ach_range[1]:
+                raise ValueError(f"fan setting outside {room.ach_range[0]:g} to {room.ach_range[1]:g} air changes an hour")
             spec.validate()
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
@@ -106,8 +109,9 @@ def optimise(state: RoomState) -> dict:
     """
     base = state.spec()
     started = time.perf_counter()
-    settings = [float(ach) for ach in np.arange(ACH_RANGE[0], ACH_RANGE[1] + 1e-9, 0.25)]
-    specs = [CaseSpec(machines=base.machines, ach=ach) for ach in settings]
+    low, high = base.room.ach_range
+    settings = [float(ach) for ach in np.linspace(low, high, 137)]
+    specs = [CaseSpec(machines=base.machines, ach=ach, room=base.room) for ach in settings]
     if ensemble.device.type == "cuda":
         passing = [_within_limit(s, p) for s, p in zip(specs, ensemble.predict_many(specs))]
         best = next((i for i, ok in enumerate(passing) if ok), None)

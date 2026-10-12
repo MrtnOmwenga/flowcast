@@ -17,7 +17,6 @@ import math
 
 import numpy as np
 
-from ..sim.sampling import ACH_RANGE
 from ..sim.spec import CaseSpec
 
 CHANNELS = {
@@ -52,7 +51,7 @@ def source_mask(spec: CaseSpec, index: int) -> np.ndarray:
 
 def _common(spec: CaseSpec) -> list[np.ndarray]:
     shape = spec.room.shape
-    lo, hi = (math.log(v) for v in ACH_RANGE)
+    lo, hi = (math.log(v) for v in spec.room.ach_range)
     fan = (math.log(spec.ach) - lo) / (hi - lo) * 2 - 1
     axes = [np.linspace(-1, 1, n, dtype=np.float32) for n in shape]
     return [np.full(shape, fan, dtype=np.float32), *np.meshgrid(*axes, indexing="ij")]

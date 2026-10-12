@@ -99,6 +99,8 @@ class Room:
     # more than half. A single return wall gives the air one way out and a pattern that
     # shifts smoothly as the layout changes.
     extract_walls: tuple[str, ...] = ("x0",)
+    # The range of fan settings, in air changes an hour, this kind of room is run at
+    ach_range: tuple[float, float] = (6.0, 40.0)
 
     @property
     def shape(self) -> tuple[int, int, int]:
@@ -168,7 +170,7 @@ class CaseSpec:
             room_data["size"] = tuple(room_data["size"])
         if "supplies" in room_data:
             room_data["supplies"] = tuple(tuple(s) for s in room_data["supplies"])
-        for key in ("extract_y", "extract_walls"):
+        for key in ("extract_y", "extract_walls", "ach_range"):
             if key in room_data:
                 room_data[key] = tuple(room_data[key])
         machines = tuple(Machine(**m) for m in data.get("machines", ()))

@@ -23,7 +23,6 @@ MACHINE_COUNT_WEIGHTS = (0.06, 0.26, 0.4, 0.28)
 PEOPLE_COUNTS = (0, 1, 2, 3)
 PEOPLE_COUNT_WEIGHTS = (0.25, 0.3, 0.25, 0.2)
 MAX_ITEMS = 5
-ACH_RANGE = (6.0, 40.0)
 SNAP = 0.2  # machines sit on a floor grid of this spacing, as in the interface
 
 
@@ -45,14 +44,15 @@ def sample_spec(rng: random.Random, room: Room | None = None, **overrides) -> Ca
         candidate = Machine(x=x, y=y, sx=sx, sy=sy, sz=sz, on=True, kind=kind)
         if not any(candidate.box.overlaps(m.box) for m in machines):
             machines.append(candidate)
-    ach = math.exp(rng.uniform(math.log(ACH_RANGE[0]), math.log(ACH_RANGE[1])))
+    low, high = room.ach_range
+    ach = math.exp(rng.uniform(math.log(low), math.log(high)))
     return CaseSpec(machines=tuple(machines), ach=round(ach, 2), room=room, **overrides)
 
 
-def sample_specs(count: int, seed: int, **overrides) -> list[CaseSpec]:
+def sample_specs(count: int, seed: int, room: Room | None = None, **overrides) -> list[CaseSpec]:
     """A reproducible list of room states; the same seed always gives the same list."""
     rng = random.Random(seed)
-    return [sample_spec(rng, **overrides) for _ in range(count)]
+    return [sample_spec(rng, room, **overrides) for _ in range(count)]
 
 
 def _snap(value: float) -> float:
