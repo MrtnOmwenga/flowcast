@@ -38,10 +38,10 @@ export class Fields {
   /** Add up the fields of the machines that are on. Particles do not change the airflow, so this is exact. */
   combine(machines: Machine[]): void {
     this.level.fill(0);
-    const emission = this.payload.assumptions.machine_emission;
+    const a = this.payload.assumptions;
     machines.forEach((machine, m) => {
       if (!machine.on) return;
-      const weight = emission * machine.emission;
+      const weight = (machine.kind === "person" ? a.person_emission : a.machine_emission) * machine.emission;
       const offset = m * this.cells;
       for (let i = 0; i < this.cells; i++) this.level[i] += weight * this.perMachine[offset + i];
     });
@@ -90,9 +90,12 @@ export class Fields {
     const top = Math.round(this.payload.assumptions.occupied_height / this.cell);
     const excluded = new Uint8Array(this.cells);
     for (const m of machines) {
-      const x0 = Math.round(m.x / this.cell) - 1, x1 = Math.round((m.x + m.sx) / this.cell) + 1;
-      const y0 = Math.round(m.y / this.cell) - 1, y1 = Math.round((m.y + m.sy) / this.cell) + 1;
-      const z0 = Math.round(m.sz / this.cell) - 1, z1 = Math.round(m.sz / this.cell) + 3;
+      // The release cells grown by one: above a machine, all around a person.
+      const reach = m.kind === "person" ? 2 : 1;
+      const x0 = Math.round(m.x / this.cell) - reach, x1 = Math.round((m.x + m.sx) / this.cell) + reach;
+      const y0 = Math.round(m.y / this.cell) - reach, y1 = Math.round((m.y + m.sy) / this.cell) + reach;
+      const top = Math.round(m.sz / this.cell);
+      const z0 = m.kind === "person" ? 0 : top - 1, z1 = m.kind === "person" ? top + 2 : top + 3;
       for (let ix = Math.max(0, x0); ix < Math.min(nx, x1); ix++)
         for (let iy = Math.max(0, y0); iy < Math.min(ny, y1); iy++)
           for (let iz = Math.max(0, z0); iz < Math.min(this.shape[2], z1); iz++) excluded[this.index(ix, iy, iz)] = 1;

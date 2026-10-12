@@ -30,7 +30,14 @@ export interface Verification {
   payload?: Payload;
 }
 
+export interface Health {
+  models: number;
+  device: string;
+  people?: boolean;
+}
+
 export const api = {
+  health: async (): Promise<Health> => (await fetch(`${BASE}/api/health`)).json(),
   /** A stored simulation, used to start the page before the service answers. */
   sample: async (): Promise<Payload> => (await fetch("/sample.json")).json(),
   predict: (state: RoomState) => post<Payload>("/api/predict", state),

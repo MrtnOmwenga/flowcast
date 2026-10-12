@@ -6,6 +6,7 @@ export interface Machine {
   sz: number;
   on: boolean;
   emission: number;
+  kind: "machine" | "person";
 }
 
 export interface Metrics {
@@ -30,6 +31,7 @@ export interface Assumptions {
   full_fan_power_kw: number;
   particle_limit: number;
   machine_emission: number;
+  person_emission: number;
   occupied_height: number;
   stagnant_age_factor: number;
   electricity_price: number;

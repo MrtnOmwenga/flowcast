@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import json
+
 import numpy as np
 import torch
 
@@ -34,6 +36,9 @@ class Ensemble:
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.flow = self._load(Path(root) / "flow", "flow")
         self.particles = self._load(Path(root) / "particles", "particles")
+        # What the models were trained on, e.g. {"people": true}; written beside the models.
+        meta = Path(root) / "meta.json"
+        self.meta: dict = json.loads(meta.read_text()) if meta.exists() else {}
 
     def _load(self, root: Path, task: str) -> list[RoomNet]:
         names = features.CHANNELS[task]

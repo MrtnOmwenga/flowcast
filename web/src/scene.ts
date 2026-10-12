@@ -174,11 +174,16 @@ export class RoomScene {
     this.machines = machines.map((m) => ({ ...m }));
     for (const mesh of this.machineMeshes) this.scene.remove(mesh);
     this.machineMeshes = this.machines.map((m) => {
+      const person = m.kind === "person";
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(m.sx, m.sz, m.sy),
-        new THREE.MeshStandardMaterial({ color: 0xd4dae2, roughness: 0.45, metalness: 0.25 }),
+        person ? new THREE.CapsuleGeometry(Math.min(m.sx, m.sy) / 2, m.sz - Math.min(m.sx, m.sy), 6, 16) : new THREE.BoxGeometry(m.sx, m.sz, m.sy),
+        new THREE.MeshStandardMaterial(
+          person ? { color: 0x8fb8e6, roughness: 0.7 } : { color: 0xd4dae2, roughness: 0.45, metalness: 0.25 },
+        ),
       );
-      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x66717f })));
+      if (!person) {
+        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x66717f })));
+      }
       this.scene.add(mesh);
       return mesh;
     });

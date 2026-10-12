@@ -10,8 +10,12 @@ const CATALOGUE: Record<string, [number, number, number]> = {
   "Filling machine": [1.2, 1.0, 1.4],
   "Small unit": [0.6, 0.6, 1.0],
   Isolator: [2.0, 0.8, 1.6],
+  "Shelving rack": [1.2, 0.4, 2.0],
+  Cart: [0.8, 0.6, 0.8],
 };
-const MAX_MACHINES = 3;
+const PERSON: [number, number, number] = [0.4, 0.4, 1.8];
+// The limits the served models were trained within. Models trained with people allow more.
+const LIMITS = { basic: { items: 3, kinds: ["Workbench", "Cabinet", "Filling machine", "Small unit", "Isolator"] } };
 const ACH_MIN = 6;
 const ACH_MAX = 40;
 const TOUR_SEEN = "flowcast-tour-seen";
@@ -29,6 +33,7 @@ let sliceHeight = 1.1;
 let busy = "";
 let note = "";
 let verification: Verification | null = null;
+let people = false; // whether the served models were trained on rooms with people
 
 // Only one prediction request runs at a time; a newer state replaces any that is waiting.
 let inFlight = false;
@@ -105,13 +110,39 @@ function changed(layoutChanged: boolean): void {
   void refresh();
 }
 
+function maxItems(): number {
+  return people ? 5 : LIMITS.basic.items;
+}
+
+function choices(): string[] {
+  return people ? [...Object.keys(CATALOGUE), "Person"] : LIMITS.basic.kinds;
+}
+
+function rotate(index: number): void {
+  const m = state.machines[index];
+  if (!fields || m.sx === m.sy) return;
+  const turned = { ...m, sx: m.sy, sy: m.sx };
+  const [lx, ly] = fields.size;
+  turned.x = round(Math.min(turned.x, lx - turned.sx));
+  turned.y = round(Math.min(turned.y, ly - turned.sy));
+  if (state.machines.some((other, i) => i !== index && overlaps(turned, other))) {
+    note = "There is no room to turn it here. Move it clear of the other items first.";
+    render();
+    return;
+  }
+  state = { ...state, machines: state.machines.map((k, i) => (i === index ? turned : k)) };
+  scene!.setMachines(state.machines);
+  changed(true);
+}
+
 function addMachine(kind: string): void {
-  if (state.machines.length >= MAX_MACHINES || !fields) return;
-  const [sx, sy, sz] = CATALOGUE[kind];
+  if (state.machines.length >= maxItems() || !fields) return;
+  const person = kind === "Person";
+  const [sx, sy, sz] = person ? PERSON : CATALOGUE[kind];
   const [lx, ly] = fields.size;
   for (let x = 0; x <= lx - sx + 1e-6; x += 0.2) {
     for (let y = 0; y <= ly - sy + 1e-6; y += 0.2) {
-      const machine: Machine = { x: round(x), y: round(y), sx, sy, sz, on: true, emission: 1 };
+      const machine: Machine = { x: round(x), y: round(y), sx, sy, sz, on: true, emission: 1, kind: person ? "person" : "machine" };
       if (!state.machines.some((other) => overlaps(machine, other))) {
         state = { ...state, machines: [...state.machines, machine] };
         scene!.setMachines(state.machines);
@@ -179,10 +210,10 @@ function render(): void {
       <h2>Equipment</h2>
       ${state.machines.map((m, i) => `
         <div class="machine">
-          <label><input type="checkbox" data-toggle="${i}" ${m.on ? "checked" : ""}/> ${nameOf(m)} <small>${m.on ? "running" : "off"}</small></label>
-          <button class="link" data-remove="${i}">remove</button>
+          <label><input type="checkbox" data-toggle="${i}" ${m.on ? "checked" : ""}/> ${nameOf(m)} <small>${m.kind === "person" ? (m.on ? "present" : "away") : m.on ? "running" : "off"}</small></label>
+          <span>${m.sx === m.sy ? "" : `<button class="link" data-rotate="${i}">turn</button> `}<button class="link" data-remove="${i}">remove</button></span>
         </div>`).join("") || `<p class="muted small">The room is empty.</p>`}
-      ${state.machines.length < MAX_MACHINES ? `<select id="add"><option value="">Add equipment…</option>${Object.keys(CATALOGUE).map((k) => `<option>${k}</option>`).join("")}</select>` : ""}
+      ${state.machines.length < maxItems() ? `<select id="add"><option value="">Add ${people ? "equipment or a person" : "equipment"}…</option>${choices().map((k) => `<option>${k}</option>`).join("")}</select>` : `<p class="muted small">The model was trained on rooms with up to ${maxItems()} items.</p>`}
     </section>
 
     <section data-tour="view">
@@ -203,7 +234,7 @@ function render(): void {
 
     <section>
       <h2>Assumptions</h2>
-      <p class="muted small">A running machine releases ${number(a.machine_emission)} particles a second. The limit is ISO class 7 (${number(a.particle_limit)} per m³), applied up to ${number(a.occupied_height, 1)} m. Fan power follows the cube of airflow from ${number(a.full_fan_power_kw, 1)} kW at ${number(a.full_ach)} air changes an hour. Electricity at $${number(a.electricity_price, 2)} per kWh.</p>
+      <p class="muted small">A running machine releases ${number(a.machine_emission)} particles a second${people ? ` and a person ${number(a.person_emission)}` : ""}. The limit is ISO class 7 (${number(a.particle_limit)} per m³), applied up to ${number(a.occupied_height, 1)} m. Fan power follows the cube of airflow from ${number(a.full_fan_power_kw, 1)} kW at ${number(a.full_ach)} air changes an hour. Electricity at $${number(a.electricity_price, 2)} per kWh.</p>
     </section>
   `;
   panel.scrollTop = scroll;
@@ -225,6 +256,7 @@ function verificationHtml(): string {
 }
 
 function nameOf(m: Machine): string {
+  if (m.kind === "person") return "Person";
   for (const [name, [sx, sy, sz]] of Object.entries(CATALOGUE)) {
     if (sz === m.sz && ((sx === m.sx && sy === m.sy) || (sx === m.sy && sy === m.sx))) return name;
   }
@@ -248,6 +280,9 @@ function bind(): void {
       scene!.setMachines(state.machines);
       changed(false);
     }),
+  );
+  panel.querySelectorAll<HTMLButtonElement>("[data-rotate]").forEach((button) =>
+    button.addEventListener("click", () => rotate(Number(button.dataset.rotate))),
   );
   panel.querySelectorAll<HTMLButtonElement>("[data-remove]").forEach((button) =>
     button.addEventListener("click", () => {
@@ -324,6 +359,7 @@ async function start(): Promise<void> {
   scene!.setSlice(sliceMode, sliceHeight);
   apply(sample, true);
   try {
+    people = (await api.health()).people === true;
     apply(await api.predict(state), true);
     online = true;
   } catch {
