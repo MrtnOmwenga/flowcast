@@ -75,7 +75,7 @@ def _header(cls: str, obj: str) -> str:
 
 
 def _vec(v) -> str:
-    return "(" + " ".join(f"{x:g}" for x in v) + ")"
+    return "(" + " ".join(f"{x:.6g}" for x in v) + ")"
 
 
 def _block_mesh(spec: CaseSpec) -> str:
@@ -113,22 +113,12 @@ def _source_box(spec: CaseSpec, index: int) -> tuple[tuple[float, ...], tuple[fl
 
 def _topo_faces(spec: CaseSpec) -> str:
     room = spec.room
-    lx, _, lz = room.size
     actions = []
-    for i, (x, y, sx, sy) in enumerate(room.supplies):
-        action = "new" if i == 0 else "add"
-        actions.append(
-            f"    {{ name inletFaces; type faceSet; action {action}; source boxToFace; "
-            f"box ({x} {y} {lz - EPS})({x + sx} {y + sy} {lz + EPS}); }}"
-        )
-    y0, y1 = room.extract_y
-    walls = [x for name, x in (("x0", 0.0), ("x1", lx)) if name in room.extract_walls]
-    for i, x in enumerate(walls):
-        action = "new" if i == 0 else "add"
-        actions.append(
-            f"    {{ name outletFaces; type faceSet; action {action}; source boxToFace; "
-            f"box ({x - EPS} {y0} 0)({x + EPS} {y1} {room.extract_height}); }}"
-        )
+    for name, openings in (("inletFaces", room.inlet_openings()), ("outletFaces", room.outlet_openings())):
+        for i, opening in enumerate(openings):
+            lo, hi = room.opening_box(opening, EPS)
+            action = "new" if i == 0 else "add"
+            actions.append(f"    {{ name {name}; type faceSet; action {action}; source boxToFace; box {_vec(lo)}{_vec(hi)}; }}")
     return "actions\n(\n" + "\n".join(actions) + "\n);\n"
 
 
@@ -292,7 +282,8 @@ boundaryField
         "U": fld(
             "[0 1 -1 0 0 0 0]",
             "uniform (0 0 0)",
-            f"type fixedValue; value uniform (0 0 {-speed:g});",
+            # Straight in through the opening, whichever wall it is on
+            f"type surfaceNormalFixedValue; refValue uniform {-speed:g}; value uniform (0 0 0);",
             "type inletOutlet; inletValue uniform (0 0 0); value uniform (0 0 0);",
             "type noSlip;",
         ),

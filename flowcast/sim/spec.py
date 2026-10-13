@@ -31,7 +31,9 @@ class Box:
         return all(a_lo < b_hi and b_lo < a_hi for a_lo, a_hi, b_lo, b_hi in zip(self.lo, self.hi, other.lo, other.hi))
 
 
-KINDS = ("machine", "person")
+KINDS = ("machine", "person", "component")
+# Kinds whose release comes off their whole surface, not from above them
+ALL_ROUND = ("person", "component")
 
 
 @dataclass(frozen=True)
@@ -64,7 +66,7 @@ class Machine:
         around it receives particles.
         """
         b = self.box
-        if self.kind == "person":
+        if self.kind in ALL_ROUND:
             lo = (b.x - cell, b.y - cell, 0.0)
             hi = (b.hi[0] + cell, b.hi[1] + cell, b.hi[2] + cell)
         else:
@@ -101,6 +103,13 @@ class Room:
     extract_walls: tuple[str, ...] = ("x0",)
     # The range of fan settings, in air changes an hour, this kind of room is run at
     ach_range: tuple[float, float] = (6.0, 40.0)
+    # Openings on any wall, for spaces that are not ceiling-supplied rooms. Each is
+    # (wall, u, v, su, sv): the wall ("x0", "x1", "y0", "y1", "z0" or "z1") and a rectangle on
+    # it in the wall's own two axes, in x, y, z order. When given, they replace the ceiling
+    # supplies and wall extracts above.
+    inlets: tuple[tuple, ...] = ()
+    outlets: tuple[tuple, ...] = ()
+    kind: str = "cleanroom"  # which sampler and readouts apply: "cleanroom" or "cabinet"
 
     @property
     def shape(self) -> tuple[int, int, int]:
@@ -110,9 +119,32 @@ class Room:
     def volume(self) -> float:
         return math.prod(self.size)
 
+    def inlet_openings(self) -> tuple[tuple, ...]:
+        if self.inlets:
+            return self.inlets
+        return tuple(("z1", x, y, sx, sy) for x, y, sx, sy in self.supplies)
+
+    def outlet_openings(self) -> tuple[tuple, ...]:
+        if self.outlets:
+            return self.outlets
+        y0, y1 = self.extract_y
+        return tuple((wall, y0, 0.0, y1 - y0, self.extract_height) for wall in self.extract_walls)
+
+    def opening_box(self, opening: tuple, tolerance: float) -> tuple[tuple[float, ...], tuple[float, ...]]:
+        """The thin box around an opening, used to pick its faces out of the wall."""
+        wall, u, v, su, sv = opening
+        axis = "xyz".index(wall[0])
+        position = 0.0 if wall[1] == "0" else self.size[axis]
+        others = [i for i in range(3) if i != axis]
+        lo, hi = [0.0] * 3, [0.0] * 3
+        lo[axis], hi[axis] = position - tolerance, position + tolerance
+        lo[others[0]], hi[others[0]] = u, u + su
+        lo[others[1]], hi[others[1]] = v, v + sv
+        return tuple(lo), tuple(hi)
+
     @property
     def supply_area(self) -> float:
-        return sum(sx * sy for _, _, sx, sy in self.supplies)
+        return sum(su * sv for _, _, _, su, sv in self.inlet_openings())
 
 
 @dataclass(frozen=True)
@@ -138,7 +170,8 @@ class CaseSpec:
     def validate(self) -> None:
         room = self.room
         cell = room.cell
-        for value in (*room.size, *(v for s in room.supplies for v in s), *room.extract_y, room.extract_height):
+        openings = (*room.inlet_openings(), *room.outlet_openings())
+        for value in (*room.size, *(v for opening in openings for v in opening[1:])):
             _require_on_grid(value, cell)
         boxes = [m.box for m in self.machines]
         for box in boxes:
@@ -146,11 +179,11 @@ class CaseSpec:
                 _require_on_grid(value, cell)
             if any(lo < 0 for lo in box.lo) or any(hi > s for hi, s in zip(box.hi, room.size)):
                 raise ValueError(f"machine outside the room: {box}")
-            if box.hi[2] + 2 * cell > room.size[2]:
-                raise ValueError(f"item too tall to leave room for its particle source: {box}")
         for machine in self.machines:
             if machine.kind not in KINDS:
                 raise ValueError(f"unknown kind of item: {machine.kind}")
+            if machine.kind not in ALL_ROUND and machine.box.hi[2] + 2 * cell > room.size[2]:
+                raise ValueError(f"item too tall to leave room for its particle source: {machine.box}")
         for i, a in enumerate(boxes):
             for b in boxes[i + 1 :]:
                 if a.overlaps(b):
@@ -173,6 +206,9 @@ class CaseSpec:
         for key in ("extract_y", "extract_walls", "ach_range"):
             if key in room_data:
                 room_data[key] = tuple(room_data[key])
+        for key in ("inlets", "outlets"):
+            if key in room_data:
+                room_data[key] = tuple(tuple(o) for o in room_data[key])
         machines = tuple(Machine(**m) for m in data.get("machines", ()))
         rest = {k: v for k, v in data.items() if k not in ("room", "machines")}
         return cls(machines=machines, room=Room(**room_data), **rest)

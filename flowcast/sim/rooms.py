@@ -12,5 +12,14 @@ ROOMS: dict[str, Room] = {
     # down through the room like a piston, as in higher-grade cleanrooms, which are run at
     # far higher air change rates.
     "ceiling": Room(supplies=((0.0, 0.0, 6.0, 4.0),), extract_walls=("x0", "x1"), ach_range=(20.0, 120.0)),
+    # A fan-cooled control cabinet, 2.0 m tall, 0.8 m wide and 0.4 m deep, laid on its back so
+    # that its mounting plate is the "floor": x runs up the cabinet, y across it, z out from
+    # the plate. Air enters through a filter fan at the bottom and leaves at the top. The fan
+    # range is 200 to 1,000 cubic metres an hour.
+    "cabinet": Room(
+        size=(2.0, 0.8, 0.4), cell=0.05, kind="cabinet",
+        inlets=(("x0", 0.2, 0.1, 0.4, 0.2),), outlets=(("x1", 0.2, 0.1, 0.4, 0.2),),
+        ach_range=(312.5, 1562.5),
+    ),
 }
 DEFAULT_ROOM = "panels"
