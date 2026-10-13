@@ -291,6 +291,63 @@ def verify(state: RoomState) -> dict:
     return jobs[job_id]
 
 
+MAX_CONFIRMATIONS = 5
+
+
+def _confirm(job_id: str, base: CaseSpec) -> None:
+    """The model proposes a fan setting; real simulations check it and step it up until one passes.
+
+    Measured on unseen rooms, about one in five of the model's own recommendations is too
+    low, so a recommendation is only called confirmed once a simulation has passed it.
+    """
+    job = jobs[job_id]
+    job["status"] = "running"
+    started = time.perf_counter()
+    try:
+        low, high = base.room.ach_range
+        proposed, tested = lowest_safe(base)
+        job["predictions"] = tested
+        if proposed is None:
+            job.update(status="done", confirmed=False, note=f"The model finds no safe setting up to {high:g} air changes an hour.")
+            return
+        ach = proposed
+        for attempt in range(MAX_CONFIRMATIONS):
+            spec = CaseSpec(machines=base.machines, ach=ach, room=base.room)
+            p = ensemble.predict(spec)
+            predicted = summarise(spec, p.fluid, p.particles, p.age, ASSUMPTIONS)
+            job["trail"].append({"ach": ach, "predicted_percent": round(100 * predicted["worst_level"] / ASSUMPTIONS.particle_limit),
+                                 "simulated_percent": None, "passed": None})
+            data = np.load(run_case(spec, VERIFY / f"{job_id}-{attempt}"))
+            simulated = summarise(spec, data["fluid"], data["particles"], data["age"], ASSUMPTIONS)
+            ratio = simulated["worst_level"] / ASSUMPTIONS.particle_limit
+            job["trail"][-1].update(simulated_percent=round(100 * ratio), passed=bool(ratio <= 1))
+            if ratio <= 1:
+                job.update(
+                    status="done", confirmed=True, ach=ach, model_ach=proposed, seconds=time.perf_counter() - started,
+                    payload=payload.build(spec, data["fluid"], data["velocity"], data["particles"], data["age"],
+                                          ASSUMPTIONS, source="simulation"),
+                )
+                return
+            if ach >= high:
+                break
+            # The worst point falls roughly in proportion as air is added, so aim just past the limit.
+            ach = min(high, max(ach + 0.25, round(ach * ratio * 1.05 * 4) / 4))
+        job.update(status="done", confirmed=False, seconds=time.perf_counter() - started,
+                   note=f"No setting was confirmed in {len(job['trail'])} simulations.")
+    except Exception as error:  # report the failure to the interface instead of losing it
+        job.update(status="failed", error=str(error))
+
+
+@app.post("/api/confirm-fan")
+def confirm_fan(state: RoomState) -> dict:
+    """Find the lowest safe fan setting with the model, then confirm it with real simulations."""
+    spec = state.spec()
+    job_id = uuid.uuid4().hex[:12]
+    jobs[job_id] = {"id": job_id, "status": "queued", "trail": []}
+    simulations.submit(_confirm, job_id, spec)
+    return jobs[job_id]
+
+
 @app.get("/api/verify/{job_id}")
 def verification(job_id: str) -> dict:
     if job_id not in jobs:

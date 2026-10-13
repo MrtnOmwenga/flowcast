@@ -70,7 +70,22 @@ export interface PositionResult {
   hardware: string;
 }
 
+export interface Confirmation {
+  id: string;
+  status: "queued" | "running" | "done" | "failed";
+  trail: { ach: number; predicted_percent: number; simulated_percent: number | null; passed: boolean | null }[];
+  predictions?: number;
+  confirmed?: boolean;
+  ach?: number;
+  model_ach?: number;
+  seconds?: number;
+  note?: string;
+  payload?: Payload;
+}
+
 export const api = {
+  confirmFan: (state: RoomState) => post<Confirmation>("/api/confirm-fan", state),
+  job: async <T>(id: string): Promise<T> => (await fetch(`${BASE}/api/verify/${id}`)).json(),
   bestPosition: (state: RoomState, item: number, thenFan: boolean) =>
     post<PositionResult>("/api/best-position", { state, item, then_fan: thenFan }),
   ask: (state: RoomState, conversation: { role: string; content: string }[]) =>

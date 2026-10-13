@@ -1,4 +1,4 @@
-import { api, type AgentAnswer, type AgentStep, type Explanation, type Verification } from "./api";
+import { api, type AgentAnswer, type AgentStep, type Confirmation, type Explanation, type Verification } from "./api";
 import { Fields } from "./field";
 import { RoomScene, overlaps, type SliceMode } from "./scene";
 import { startTutorial } from "./tutorial";
@@ -32,6 +32,7 @@ let task: Task = "explore";
 let positionItem = 0;
 let positionThenFan = true;
 let searchNote = "";
+let confirmation: Confirmation | null = null;
 let scene: RoomScene | null = null;
 
 let state: RoomState = { machines: [], ach: 20 };
@@ -121,6 +122,7 @@ function apply(result: Payload, current: boolean): void {
 
 function changed(layoutChanged: boolean): void {
   verification = null;
+  confirmation = null;
   explanation = null;
   note = "";
   if (!layoutChanged && fields) {
@@ -273,7 +275,12 @@ function render(): void {
     <section data-tour="optimise">
       <h2>The fan setting</h2>
       <p class="muted small">Finds the lowest setting that keeps the worst point ${number(a.safety_margin * 100)}% under the limit, for the room as it stands.</p>
-      <div class="row"><button id="optimise" ${online && !busy ? "" : "disabled"}>Find the lowest safe setting</button></div>
+      <div class="row">
+        <button id="optimise" ${online && !busy ? "" : "disabled"}>Find the lowest safe setting</button>
+        <button class="ghost" id="confirm-fan" ${online && !busy ? "" : "disabled"}>Find it and confirm by simulation</button>
+      </div>
+      <p class="muted small">The first asks the model only and takes about a second. The second then checks the answer with real simulations, stepping the fan up until one passes: one to three minutes. Tested on 100 unseen rooms, the model's own answer was confirmed safe 81% of the time.</p>
+      ${confirmationHtml()}
     </section>
     <section>
       <h2>Where an item stands</h2>
@@ -410,6 +417,46 @@ async function explain(): Promise<void> {
   render();
 }
 
+function confirmationHtml(): string {
+  const c = confirmation;
+  if (!c) return "";
+  const lines = c.trail.map((step) => {
+    const outcome = step.simulated_percent === null
+      ? "simulating…"
+      : `simulation ${step.simulated_percent}% of the limit: ${step.passed ? "passes" : "too high"}`;
+    return `<li><b>${number(step.ach, 1)} air changes</b><small>model ${step.predicted_percent}% of the limit, ${outcome}</small></li>`;
+  }).join("");
+  const done = c.status === "done";
+  const verdict = c.status === "failed" ? `<div class="status bad">The simulation failed.</div>`
+    : !done ? ""
+    : c.confirmed ? `<div class="status ok">Confirmed by simulation at ${number(c.ach ?? 0, 1)} air changes an hour</div>`
+    : `<div class="status bad">${escape(c.note ?? "Not confirmed.")}</div>`;
+  return `<ol class="steps">${lines}</ol>${verdict}${done && c.confirmed && c.model_ach !== c.ach ? `<p class="muted small">The model first proposed ${number(c.model_ach ?? 0, 1)}; the simulation moved it up.</p>` : ""}`;
+}
+
+async function confirmFan(): Promise<void> {
+  busy = "Asking the model, then checking with real simulations…";
+  searchNote = "";
+  confirmation = null;
+  render();
+  try {
+    confirmation = await api.confirmFan(state);
+    while (confirmation.status === "queued" || confirmation.status === "running") {
+      render();
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      confirmation = await api.job<Confirmation>(confirmation.id);
+    }
+    if (confirmation.confirmed && confirmation.ach !== undefined) {
+      state = { ...state, ach: confirmation.ach };
+      void refresh();
+    }
+  } catch (error) {
+    searchNote = `The check failed: ${(error as Error).message}`;
+  }
+  busy = "";
+  render();
+}
+
 function verificationHtml(): string {
   const v = verification;
   if (!v) return "";
@@ -480,6 +527,7 @@ function bind(): void {
     scene!.setSlice(sliceMode, sliceHeight);
   });
   panel.querySelector<HTMLButtonElement>("#optimise")?.addEventListener("click", () => void optimise());
+  panel.querySelector<HTMLButtonElement>("#confirm-fan")?.addEventListener("click", () => void confirmFan());
   panel.querySelector<HTMLButtonElement>("#verify")?.addEventListener("click", () => void verify());
   panel.querySelector<HTMLButtonElement>("#explain")?.addEventListener("click", () => void explain());
   panel.querySelectorAll<HTMLButtonElement>("[data-task]").forEach((button) =>
