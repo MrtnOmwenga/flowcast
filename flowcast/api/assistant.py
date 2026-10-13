@@ -7,6 +7,7 @@ comes back from a tool, and every tool is the same code the interface calls.
 from __future__ import annotations
 
 import json
+import re
 from typing import Callable
 
 from ..model.predict import Ensemble
@@ -345,6 +346,20 @@ class Session:
         return round(round(float(value) / step) * step, 6)
 
 
+_COORDINATES = re.compile(r"\s*(?:(?:at|to|from)\s+)?\(\s*(?:x\s*=\s*)?-?\d+(?:\.\d+)?\s*(?:m\s*)?,\s*(?:y\s*=\s*)?-?\d+(?:\.\d+)?\s*m?\s*\)")
+MAX_REPLY_WORDS = 110
+
+
+def tidy(reply: str) -> str:
+    """Hold the final answer to its rules whichever model wrote it: no coordinates, said once."""
+    reply = _COORDINATES.sub("", reply.strip())
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", reply) if p.strip()]
+    # Weaker models sometimes give the answer and then give it again; keep the first telling.
+    while len(paragraphs) > 1 and sum(len(p.split()) for p in paragraphs) > MAX_REPLY_WORDS:
+        paragraphs.pop()
+    return "\n\n".join(paragraphs)
+
+
 def run(session: Session, conversation: list[dict]) -> dict:
     """Let the model work through the request, running each tool it asks for."""
     a = session.a
@@ -362,7 +377,7 @@ def run(session: Session, conversation: list[dict]) -> dict:
         reply, model = llm.chat(messages, tools=tools, max_tokens=700)
         calls = reply.get("tool_calls") or []
         if not calls:
-            return {"reply": (reply.get("content") or "").strip(), "steps": session.steps, "model": model}
+            return {"reply": tidy(reply.get("content") or ""), "steps": session.steps, "model": model}
         messages.append({"role": "assistant", "content": reply.get("content") or "", "tool_calls": calls})
         for call in calls:
             name = call["function"]["name"]
