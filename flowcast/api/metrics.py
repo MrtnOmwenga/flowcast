@@ -14,8 +14,11 @@ from ..sim.spec import CaseSpec
 class Assumptions:
     """Figures the readouts depend on. They are stated in the interface, not hidden."""
 
-    full_ach: float = 40.0  # the fan setting the room runs at today
-    full_fan_power_kw: float = 3.0  # fan power at that setting
+    full_ach: float = 30.0  # the fan setting the room runs at today
+    full_fan_power_kw: float = 1.5  # fan power at that setting
+    # Share of that power that does not fall as the fans slow: drive and motor losses. With
+    # it, turning the air down by half saves about four fifths of the power, not seven eighths.
+    fan_fixed_loss: float = 0.08
     particle_limit: float = 352_000.0  # particles of 0.5 micrometres and larger per cubic metre (ISO class 7)
     machine_emission: float = 6_000.0  # particles per second released by a running machine
     person_emission: float = 5_000.0  # particles per second shed by a person at work in the room
@@ -37,8 +40,9 @@ def release_rate(machine, a: Assumptions) -> float:
 
 
 def fan_power_kw(ach: float, a: Assumptions) -> float:
-    """Fan affinity law: power falls with the cube of airflow."""
-    return a.full_fan_power_kw * (ach / a.full_ach) ** 3
+    """Fan affinity law (power falls with the cube of airflow) plus a fixed share for drive losses."""
+    ratio = ach / a.full_ach
+    return a.full_fan_power_kw * (a.fan_fixed_loss + (1 - a.fan_fixed_loss) * ratio**3)
 
 
 def protected_zone(spec: CaseSpec, fluid: np.ndarray, a: Assumptions) -> np.ndarray:

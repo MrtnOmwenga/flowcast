@@ -182,7 +182,7 @@ function render(): void {
   }
   const scroll = panel.scrollTop;
   const a = payload.assumptions;
-  const power = a.full_fan_power_kw * (state.ach / a.full_ach) ** 3;
+  const power = a.full_fan_power_kw * (a.fan_fixed_loss + (1 - a.fan_fixed_loss) * (state.ach / a.full_ach) ** 3);
   const saving = a.full_fan_power_kw - power;
   const worst = fields.worst(state.machines);
   const ratio = worst.level / a.particle_limit;
@@ -221,8 +221,8 @@ function render(): void {
       <div class="meter"><div class="fill ${verdict}" style="width:${bar}%"></div><div class="tick"></div></div>
       <dl>
         <dt>Worst point in the occupied zone</dt><dd>${number(worst.level)} <small>/ m³ (limit ${number(a.particle_limit)})</small></dd>
-        <dt>Fan power</dt><dd>${number(power, 2)} kW <small>of ${number(a.full_fan_power_kw, 1)} kW at full speed</small></dd>
-        <dt>Saving</dt><dd>${number((saving / a.full_fan_power_kw) * 100)}% <small>${number(saving * a.hours_per_year)} kWh, $${number(saving * a.hours_per_year * a.electricity_price)} a year</small></dd>
+        <dt>Fan power</dt><dd>${number(power, 2)} kW <small>against ${number(a.full_fan_power_kw, 1)} kW at today's ${number(a.full_ach)} air changes</small></dd>
+        <dt>${saving >= 0 ? "Saving" : "Extra cost"}</dt><dd>${number((Math.abs(saving) / a.full_fan_power_kw) * 100)}% <small>${number(Math.abs(saving) * a.hours_per_year)} kWh, $${number(Math.abs(saving) * a.hours_per_year * a.electricity_price)} a year</small></dd>
         <dt>Stagnant air</dt><dd>${number(payload.metrics.stagnant_fraction * 100, 1)}% <small>of the room</small></dd>
         ${confidence === undefined ? "" : `<dt>Model confidence</dt><dd class="${confidence < 0.6 ? "amber" : ""}">${confidence < 0.6 ? "Low: verify before relying on it" : "Good"}</dd>`}
       </dl>
@@ -260,7 +260,7 @@ function render(): void {
 
     <section>
       <h2>Assumptions</h2>
-      <p class="muted small">A running machine releases ${number(a.machine_emission)} particles a second${people ? ` and a person ${number(a.person_emission)}` : ""}. The limit is ISO class 7 (${number(a.particle_limit)} per m³), applied up to ${number(a.occupied_height, 1)} m. Fan power follows the cube of airflow from ${number(a.full_fan_power_kw, 1)} kW at ${number(a.full_ach)} air changes an hour. Electricity at $${number(a.electricity_price, 2)} per kWh.</p>
+      <p class="muted small">A running machine releases ${number(a.machine_emission)} particles a second${people ? ` and a person ${number(a.person_emission)}` : ""}. The limit is ISO class 7 (${number(a.particle_limit)} per m³), applied up to ${number(a.occupied_height, 1)} m. The room runs at ${number(a.full_ach)} air changes an hour today, using ${number(a.full_fan_power_kw, 1)} kW of fan power. Power follows the cube of airflow, with ${number(a.fan_fixed_loss * 100)}% that does not fall as the fans slow. Electricity at $${number(a.electricity_price, 2)} per kWh.</p>
     </section>
   `;
   panel.scrollTop = scroll;

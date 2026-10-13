@@ -29,6 +29,7 @@ export interface Metrics {
 export interface Assumptions {
   full_ach: number;
   full_fan_power_kw: number;
+  fan_fixed_loss: number;
   particle_limit: number;
   machine_emission: number;
   person_emission: number;

@@ -87,7 +87,8 @@ def facts(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: f
         "average_level_percent_of_limit": round(100 * metrics["mean_level"] / a.particle_limit),
         "stagnant_air_percent_of_room": round(100 * metrics["stagnant_fraction"], 1),
         "fan_power_kw": round(metrics["fan_power_kw"], 2),
-        "saving_against_full_speed_percent": round(metrics["saving_percent"]),
+        "fan_setting_the_room_runs_at_today": a.full_ach,
+        "saving_against_today_percent": round(metrics["saving_percent"]),
         "items": items,
     }
     if lowest_safe is not None:

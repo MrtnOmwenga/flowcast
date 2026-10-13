@@ -129,7 +129,7 @@ class Session:
             "state": ("present" if m.on else "away") if m.kind == "person" else ("running" if m.on else "off"),
         } for i, m in enumerate(self.machines)]
         return {"items": items, "result": self.result(), "fan_range": list(self.room.ach_range),
-                "full_speed_fan_power_kw": self.a.full_fan_power_kw}
+                "fan_setting_today": self.a.full_ach, "fan_power_today_kw": self.a.full_fan_power_kw}
 
     def move_item(self, item: int, x: float, y: float) -> dict:
         i = self._item(item)
@@ -186,7 +186,7 @@ class Session:
         after = fan_power_kw(best, self.a)
         return {"found": True, "lowest_safe_fan_setting": round(best, 1), "settings_tested": tested,
                 "fan_power_kw": round(after, 2), "fan_power_before_kw": round(before, 2),
-                "saving_against_full_speed_percent": round(100 * (1 - after / self.a.full_fan_power_kw)),
+                "saving_against_today_percent": round(100 * (1 - after / self.a.full_fan_power_kw)),
                 "result": self.result()}
 
     def find_best_position(self, item: int) -> dict:
