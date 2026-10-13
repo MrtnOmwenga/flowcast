@@ -3,6 +3,7 @@
 FLOWCAST_MODELS   directory holding the trained ensemble (default data/models)
 FLOWCAST_MODELS_CEILING, FLOWCAST_MODELS_CROSS, FLOWCAST_MODELS_CABINET   the same for the other room designs
 FLOWCAST_VERIFY   directory for verification simulations (default data/verify)
+FLOWCAST_WEB      a built copy of the web page to serve at / (optional)
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from pathlib import Path
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ..model.predict import Ensemble, Prediction
@@ -454,3 +456,9 @@ def verification(job_id: str) -> dict:
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="unknown verification")
     return jobs[job_id]
+
+
+# Serve the page from the same address when a built copy is given, so one container is the
+# whole site. Mounted last, so every /api route above takes precedence.
+if os.environ.get("FLOWCAST_WEB"):
+    app.mount("/", StaticFiles(directory=os.environ["FLOWCAST_WEB"], html=True), name="web")
