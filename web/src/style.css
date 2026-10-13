@@ -87,7 +87,9 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 .design small { display: block; font-weight: 400; margin-top: 2px; line-height: 1.3; }
 .design.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .design:disabled { opacity: 0.55; }
-.tab.preview { color: #9aa5b5; font-style: italic; }
+.task-picker { margin-top: 14px; }
+.task-picker label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.task-picker select { margin-top: 0; font-size: 15px; font-weight: 600; padding: 9px 10px; }
 .preview-block { opacity: 0.6; }
 .preview-block h2 { margin-top: 12px; }
 select.inline { width: auto; margin: 0; padding: 6px 8px; font-size: 13px; }

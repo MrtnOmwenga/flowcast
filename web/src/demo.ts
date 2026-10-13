@@ -26,13 +26,12 @@ const SOON = `<span class="soon">soon</span>`;
 const LIMITS = { basic: { items: 3, kinds: ["Workbench", "Cabinet", "Filling machine", "Small unit", "Isolator"] } };
 const TOUR_SEEN = "flowcast-tour-seen";
 
-type Task = "explore" | "optimise" | "plan" | "confirm" | "change" | "report";
+type Task = "explore" | "optimise" | "plan" | "confirm" | "compare";
 const TASKS: { id: Task; name: string; about: string; soon?: boolean }[] = [
   { id: "explore", name: "Explore", about: "Change the room by hand and watch the air respond. Each change is predicted by the model in about a tenth of a second." },
   { id: "optimise", name: "Optimise", about: "Let Flowcast search. The model is run many times to find the best fan setting or the best place for an item." },
   { id: "plan", name: "Plan a day", about: "Give Flowcast the day's production plan in your own words. A language model reads it, and the airflow model sets the fans for each part of the day." },
-  { id: "change", name: "Assess a change", soon: true, about: "Paste a change request. Flowcast tests the change, confirms it by simulation and drafts the airflow section of the assessment." },
-  { id: "report", name: "Report", soon: true, about: "Take the result away: a change report, a side-by-side comparison of two layouts, and a table of fan settings for the building controls." },
+  { id: "compare", name: "Compare and report", soon: true, about: "Pin the room as it is, make a change by hand or by asking, and see before and after side by side. Then take the result away as a written record." },
   { id: "confirm", name: "Confirm", about: "Check the model against a real OpenFOAM simulation of the room exactly as it is set. This takes about a minute." },
 ];
 
@@ -251,13 +250,16 @@ function render(): void {
       </dl>
       ${confidence !== undefined && confidence < 0.6 ? `<p class="muted small">The models disagree about this layout. Confirm it by simulation before relying on it.</p>` : ""}
       ${languageModel ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button>
-        <select class="inline" disabled title="Not built yet"><option>English</option><option>Italiano</option><option>Kiswahili</option></select>${SOON}</div>` : ""}
+</div>` : ""}
       ${explanation ? `<div class="explanation">${explanation.text.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute">${escape(explanation.model)} on ${escape(explanation.hosted_on)}</p></div>` : ""}
       <p class="compute">${payload.source !== "model" || !payload.compute ? "OpenFOAM simulation" : `${payload.compute.models} models on ${payload.compute.hardware} · ${number(payload.compute.seconds * 1000)} ms`}</p>
     </section>
 
-    <div class="tabs" data-tour="tasks">
-      ${TASKS.map((k) => `<button class="tab ${k.id === task ? "active" : ""} ${k.soon ? "preview" : ""}" data-task="${k.id}">${k.name}</button>`).join("")}
+    <div class="task-picker" data-tour="tasks">
+      <label for="task">What do you want to do?</label>
+      <select id="task">
+        ${TASKS.map((k) => `<option value="${k.id}" ${k.id === task ? "selected" : ""}>${k.name}${k.soon ? " (soon)" : ""}</option>`).join("")}
+      </select>
     </div>
     <p class="muted small about">${current.soon ? `${SOON} ` : ""}${current.about}</p>
 
@@ -324,29 +326,23 @@ function render(): void {
       <div class="row"><button class="ghost" disabled>Send the schedule to the building controls</button>${SOON}</div>
     </section>` : ""}
 
-    ${task === "change" ? `
+    ${task === "compare" ? `
     <section class="preview-block">
-      <h2>The change request</h2>
-      <textarea rows="5" disabled>CR-0412: Install a second filling machine beside the isolator to raise output on line 2. Target date: next shutdown.</textarea>
-      <div class="row"><button disabled>Assess this change</button></div>
-      <h2>What comes back</h2>
-      <ol class="steps muted">
-        <li><b>The change, as understood</b><small>which item, where, and what it replaces</small></li>
-        <li><b>The room before and after</b><small>worst point, stagnant air and counter position</small></li>
-        <li><b>The lowest safe fan setting after the change</b><small>found by the model, confirmed by simulation</small></li>
-        <li><b>A drafted airflow section</b><small>written for the change control record, with every figure traced to a simulation</small></li>
-      </ol>
-    </section>` : ""}
-
-    ${task === "report" ? `
-    <section class="preview-block">
-      <h2>Take the result away</h2>
+      <h2>Before and after</h2>
+      <div class="row"><button disabled>Pin the room as it is now</button></div>
+      <p class="muted small">Then change the room by hand, or ask for the change in words, for example by pasting a change request.</p>
+      <table class="schedule"><thead><tr><th></th><th>Before</th><th>After</th></tr></thead><tbody>
+        <tr><td>Worst point</td><td>–</td><td>–</td></tr>
+        <tr><td>Lowest safe fan setting</td><td>–</td><td>–</td></tr>
+        <tr><td>Fan energy a year</td><td>–</td><td>–</td></tr>
+        <tr><td>Stagnant air</td><td>–</td><td>–</td></tr>
+        <tr><td>Counter position</td><td>–</td><td>–</td></tr>
+      </tbody></table>
+      <h2>Take it away</h2>
       <div class="row"><button disabled>Download the change report</button></div>
-      <p class="muted small">One page: the layout, the prediction, the confirming simulation and the recommended setting.</p>
-      <div class="row"><button disabled>Compare with another layout</button></div>
-      <p class="muted small">Two rooms side by side, with the difference in worst point, fan setting and energy.</p>
+      <p class="muted small">One page for the change record: both layouts, the comparison above, the confirming simulation and the recommended setting, with the wording drafted for you.</p>
       <div class="row"><button disabled>Fan settings for the building controls</button></div>
-      <p class="muted small">A table with one setting for each state of the room: empty, staffed, each machine running.</p>
+      <p class="muted small">One setting for each state of the room: empty, staffed, each machine running.</p>
     </section>` : ""}
 
     ${task === "confirm" ? `
@@ -641,9 +637,8 @@ function bind(): void {
   );
   panel.querySelector<HTMLButtonElement>("#verify")?.addEventListener("click", () => void verify());
   panel.querySelector<HTMLButtonElement>("#explain")?.addEventListener("click", () => void explain());
-  panel.querySelectorAll<HTMLButtonElement>("[data-task]").forEach((button) =>
-    button.addEventListener("click", () => setTask(button.dataset.task as Task)),
-  );
+  const picker = panel.querySelector<HTMLSelectElement>("#task");
+  picker?.addEventListener("change", () => setTask(picker.value as Task));
   const item = panel.querySelector<HTMLSelectElement>("#position-item");
   item?.addEventListener("change", () => (positionItem = Number(item.value)));
   const thenFan = panel.querySelector<HTMLInputElement>("#position-fan");
