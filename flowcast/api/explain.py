@@ -13,7 +13,8 @@ from .metrics import Assumptions, fan_power_kw, release_rate, summarise
 SYSTEM = """You explain airflow predictions for a ventilated cleanroom to the engineer responsible for it.
 You are given facts computed by a flow model. Use only those facts: never invent a number, a cause or an item.
 Write plain, direct English in at most 120 words, as three short paragraphs without headings or lists:
-1. Whether the room is within its particle limit, and by how much.
+1. Whether the room is within its particle limit, and by how much, naming the standard and whether the room
+   is in operation or at rest.
 2. Why the worst point is where it is, using the sources and the airflow facts.
 3. One or two specific things to try in the tool (move a named item, change the fan setting, switch something off).
 Describe places in words relative to the named items and the walls (for example "just above the filling
@@ -49,7 +50,7 @@ def _where(spec: CaseSpec, position: list[float]) -> str:
     return ", ".join(parts)
 
 
-def facts(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: float | None) -> dict:
+def facts(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: float | None, standard: dict | None = None) -> dict:
     """Numbers the explanation may use, all taken from the prediction."""
     metrics = summarise(spec, prediction.fluid, prediction.particles, prediction.age, a)
     cell = spec.room.cell
@@ -76,6 +77,8 @@ def facts(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: f
         "fan_setting_air_changes_per_hour": round(spec.ach, 1),
         "fan_range": list(spec.room.ach_range),
         "particle_limit_per_m3": a.particle_limit,
+        "standard": f"{standard['name']}, {standard['state']}" if standard else None,
+        "site_minimum_fan_setting": standard["minimum_ach"] if standard else None,
         "worst_point": {
             "level_per_m3": round(metrics["worst_level"]),
             "percent_of_limit": round(100 * metrics["worst_level"] / a.particle_limit),
@@ -97,10 +100,10 @@ def facts(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: f
     return result
 
 
-def explain(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: float | None) -> dict:
+def explain(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: float | None, standard: dict | None = None) -> dict:
     import json
 
-    data = facts(spec, prediction, a, lowest_safe)
+    data = facts(spec, prediction, a, lowest_safe, standard)
     message, model = llm.chat(
         [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "Facts:\n" + json.dumps(data, indent=1)}],
         max_tokens=320,

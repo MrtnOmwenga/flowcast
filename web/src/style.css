@@ -87,6 +87,11 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 .design small { display: block; font-weight: 400; margin-top: 2px; line-height: 1.3; }
 .design.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .design:disabled { opacity: 0.55; }
+.rules { border-top: 0; padding-top: 6px; }
+.rule-row { display: grid; grid-template-columns: 1fr 150px; align-items: center; gap: 10px; margin: 6px 0; }
+.rule-row label { margin: 0; font-size: 13px; }
+.rule-row select, .rule-row input { margin: 0; width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; font: inherit; font-size: 13px; }
+table.schedule tr.lead td, table.schedule tr.clean-up td { color: var(--muted); font-style: italic; }
 .task-picker { margin-top: 14px; }
 .task-picker label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
 .task-picker select { margin-top: 0; font-size: 15px; font-weight: 600; padding: 9px 10px; }

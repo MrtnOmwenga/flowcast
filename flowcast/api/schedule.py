@@ -17,17 +17,16 @@ from .explain import item_name
 from .metrics import Assumptions, fan_power_kw
 
 SYSTEM = """You turn a cleanroom's production plan for one day into a list of periods.
-You are given the items in the room, each with a number, and the plan as the engineer wrote it.
+You are given the machines and the people in the room, each with a number, and the plan as the engineer wrote it.
 Reply with one JSON object and nothing else, in this form:
-{"periods": [{"start": "HH:MM", "end": "HH:MM", "label": "a few words", "on": [item numbers]}]}
+{"periods": [{"start": "HH:MM", "end": "HH:MM", "label": "a few words", "machines_running": [numbers], "people_present": [numbers]}]}
 Rules:
-- People are items too. "on" lists every machine that is running AND every person who is in the room in that
-  period. Everything else is off or away. An operator, technician, cleaner or crew member is a person item.
-- "Everyone" or "all operators" means every person item; "all machines" means every machine item.
+- "machines_running" holds only numbers from the machines list; "people_present" only numbers from the people list.
+- Think about each separately. A machine can run with nobody in the room, and a person can be in with every machine off.
+- An operator, technician, cleaner or crew member is a person. "Everyone" means every person; "all machines" means every machine.
+- "The first machine" is the lowest-numbered machine; "one operator" is the lowest-numbered person.
 - Periods must not overlap and together must cover the whole day from 00:00 to 24:00, in order. Use 24:00 for the end of the day.
-- If the plan does not mention a time, the room is empty and every machine is off then.
-- If the plan names a kind of item and there are several, use the lowest numbers first.
-- Use only item numbers from the list."""
+- If the plan does not mention a time, the room is empty and every machine is off then."""
 
 DEFAULT_PLAN = (
     "The room is empty overnight. The first operator arrives at 06:00 and starts the first machine. "
@@ -61,7 +60,8 @@ def parse_periods(reply: str, items: int) -> list[dict]:
         a, b = _minutes(entry["start"]), _minutes(entry["end"])
         if b <= a:
             continue
-        on = sorted({int(n) for n in entry.get("on", []) if 1 <= int(n) <= items})
+        listed = [*entry.get("machines_running", []), *entry.get("people_present", []), *entry.get("on", [])]
+        on = sorted({int(n) for n in listed if 1 <= int(n) <= items})
         periods.append({"start": a, "end": b, "label": str(entry.get("label", "")).strip()[:60], "on": on})
     periods.sort(key=lambda p: p["start"])
     filled, clock = [], 0
@@ -77,11 +77,12 @@ def parse_periods(reply: str, items: int) -> list[dict]:
     return filled
 
 
-def build(spec: CaseSpec, plan: str, a: Assumptions, lowest_safe: Callable[[CaseSpec], tuple[float | None, int]]) -> dict:
+def build(spec: CaseSpec, plan: str, rules, lowest_safe: Callable[[CaseSpec], tuple[float | None, int]]) -> dict:
     listing = {
         "machines": [{"number": i + 1, "what": item_name(m)} for i, m in enumerate(spec.machines) if m.kind != "person"],
         "people": [{"number": i + 1} for i, m in enumerate(spec.machines) if m.kind == "person"],
     }
+
     def readable(reply: dict) -> bool:
         try:
             return bool(parse_periods(reply.get("content") or "", len(spec.machines)))
@@ -95,6 +96,7 @@ def build(spec: CaseSpec, plan: str, a: Assumptions, lowest_safe: Callable[[Case
     )
     periods = parse_periods(message.get("content") or "", len(spec.machines))
 
+    people = {i + 1 for i, m in enumerate(spec.machines) if m.kind == "person"}
     settings: dict[tuple[int, ...], dict] = {}
     tested = 0
     for period in periods:
@@ -104,12 +106,18 @@ def build(spec: CaseSpec, plan: str, a: Assumptions, lowest_safe: Callable[[Case
                 Machine(x=m.x, y=m.y, sx=m.sx, sy=m.sy, sz=m.sz, on=(i + 1) in key, emission=m.emission, kind=m.kind)
                 for i, m in enumerate(spec.machines)
             )
+            a = rules.assumptions(machines)
             best, count = lowest_safe(CaseSpec(machines=machines, ach=spec.ach, room=spec.room))
             tested += count
             ach = best if best is not None else spec.room.ach_range[1]
-            settings[key] = {"ach": ach, "feasible": best is not None, "power_kw": fan_power_kw(ach, a)}
-        period.update(settings[key])
+            settings[key] = {"ach": ach, "feasible": best is not None, "limit": a.particle_limit,
+                             "state": "in operation" if key else "at rest"}
+        period.update(settings[key], staffed=bool(people & set(key)), kind="plan")
 
+    periods = _add_transitions(periods, rules)
+    a = rules.assumptions(spec.machines)
+    for period in periods:
+        period["power_kw"] = fan_power_kw(period["ach"], a)
     hours = lambda p: (p["end"] - p["start"]) / 60
     used = sum(p["power_kw"] * hours(p) for p in periods)
     today = a.full_fan_power_kw * 24
@@ -123,6 +131,37 @@ def build(spec: CaseSpec, plan: str, a: Assumptions, lowest_safe: Callable[[Case
         "room_states": len(settings),
         "settings_tested": tested,
         "today_ach": a.full_ach,
+        "standard": rules.describe(spec.machines),
         "model": model,
         "hosted_on": llm.HOSTED_ON,
     }
+
+
+def _add_transitions(periods: list[dict], rules) -> list[dict]:
+    """Bring the fans up before staff arrive, and hold them up while the room cleans up after work.
+
+    Before a staffed period the fans go to that period's setting early, by the lead time.
+    When work stops, the regulation expects the room to return to its at-rest limit within a
+    clean-up period, so the working setting is held for that long before the fans drop.
+    """
+    out: list[dict] = []
+    for i, period in enumerate(periods):
+        period = dict(period)
+        previous = periods[i - 1] if i else None
+        following = periods[i + 1] if i + 1 < len(periods) else None
+        start, end = period["start"], period["end"]
+        if previous and previous["on"] and not period["on"] and previous["ach"] > period["ach"]:
+            hold = min(rules.cleanup_minutes, end - start)
+            if hold > 0:
+                out.append({**period, "end": start + hold, "ach": previous["ach"], "label": "Clean-up after work",
+                            "kind": "clean-up", "feasible": True})
+                start += hold
+        lead = 0
+        if following and following.get("staffed") and not period.get("staffed") and following["ach"] > period["ach"]:
+            lead = min(rules.lead_minutes, end - start)
+        if end - lead > start:
+            out.append({**period, "start": start, "end": end - lead})
+        if lead > 0:
+            out.append({**period, "start": end - lead, "end": end, "ach": following["ach"], "label": "Fans up before staff arrive",
+                        "kind": "lead", "feasible": True})
+    return out

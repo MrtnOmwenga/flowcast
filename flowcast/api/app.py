@@ -27,6 +27,7 @@ from . import explain as explaining
 from . import llm, payload
 from . import schedule as scheduling
 from .metrics import Assumptions, protected_zone, summarise
+from .standards import DEFAULT_STANDARD, STANDARDS, Rules
 
 MODELS = Path(os.environ.get("FLOWCAST_MODELS", "data/models"))
 VERIFY = Path(os.environ.get("FLOWCAST_VERIFY", "data/verify"))
@@ -77,6 +78,14 @@ class MachineIn(BaseModel):
 class RoomState(BaseModel):
     machines: list[MachineIn] = Field(default_factory=list, max_length=5)
     ach: float = Field(gt=0)
+    standard: str = DEFAULT_STANDARD
+    minimum_ach: float = Field(default=10.0, ge=0)
+
+    def rules(self) -> Rules:
+        if self.standard not in STANDARDS:
+            raise HTTPException(status_code=422, detail=f"unknown standard: {self.standard}")
+        low, high = ROOMS[DEFAULT_ROOM].ach_range
+        return Rules(standard=self.standard, minimum_ach=min(max(self.minimum_ach, low), high))
 
     def spec(self) -> CaseSpec:
         room = ROOMS[DEFAULT_ROOM]
@@ -91,17 +100,18 @@ class RoomState(BaseModel):
 
 
 def confidence(spec: CaseSpec, prediction: Prediction) -> float:
-    zone = protected_zone(spec, prediction.fluid, ASSUMPTIONS)
+    zone = protected_zone(spec, prediction.fluid, ASSUMPTIONS)  # the zone does not depend on the standard
     spread = float(prediction.spread[zone].mean()) if zone.any() else 0.0
     threshold = ensemble.meta.get("low_confidence_spread", DEFAULT_LOW_CONFIDENCE_SPREAD)
     return max(0.0, 1.0 - 0.4 * spread / threshold)
 
 
-def respond(spec: CaseSpec, prediction: Prediction, seconds: float) -> dict:
+def respond(spec: CaseSpec, prediction: Prediction, seconds: float, rules: Rules) -> dict:
     body = payload.build(
         spec, prediction.fluid, prediction.velocity, prediction.particles, prediction.age,
-        ASSUMPTIONS, uncertainty=prediction.spread, source="model",
+        rules.assumptions(spec.machines), uncertainty=prediction.spread, source="model",
     )
+    body["standard"] = rules.describe(spec.machines)
     body["metrics"]["confidence"] = confidence(spec, prediction)
     body["compute"] = {"hardware": HARDWARE, "gpu": ensemble.device.type == "cuda", "seconds": seconds,
                        "models": ensemble.members}
@@ -119,31 +129,46 @@ def predict(state: RoomState) -> dict:
     spec = state.spec()
     started = time.perf_counter()
     prediction = ensemble.predict(spec)
-    return respond(spec, prediction, time.perf_counter() - started)
+    return respond(spec, prediction, time.perf_counter() - started, state.rules())
 
 
-def _within_limit(spec: CaseSpec, prediction: Prediction) -> bool:
+def _within_limit(spec: CaseSpec, prediction: Prediction, a: Assumptions) -> bool:
     """Whether the worst point is under the limit with the safety margin to spare."""
-    return summarise(spec, prediction.fluid, prediction.particles, prediction.age, ASSUMPTIONS)["safe"]
+    return summarise(spec, prediction.fluid, prediction.particles, prediction.age, a)["safe"]
 
 
-def lowest_safe(base: CaseSpec) -> tuple[float | None, int]:
-    """Bisect the fan settings for the lowest that is safe. Returns it and how many were tested."""
+def fan_settings(base: CaseSpec, rules: Rules) -> list[float]:
+    """The fan settings a search may choose from: quarter steps from the site minimum up."""
     low, high = base.room.ach_range
-    settings = [float(ach) for ach in np.linspace(low, high, 137)]
+    return [float(ach) for ach in np.linspace(low, high, 137) if ach >= rules.minimum_ach - 1e-9]
+
+
+def lowest_safe(base: CaseSpec, rules: Rules) -> tuple[float | None, int]:
+    """Bisect the fan settings for the lowest that is safe. Returns it and how many were tested."""
+    a = rules.assumptions(base.machines)
+    settings = fan_settings(base, rules)
     specs = [CaseSpec(machines=base.machines, ach=ach, room=base.room) for ach in settings]
     tested = 1
-    if not _within_limit(specs[-1], ensemble.predict(specs[-1])):
+    if not _within_limit(specs[-1], ensemble.predict(specs[-1]), a):
         return None, tested
     lo, hi = 0, len(specs) - 1  # the answer lies in [lo, hi]; hi passes
     while lo < hi:
         middle = (lo + hi) // 2
         tested += 1
-        if _within_limit(specs[middle], ensemble.predict(specs[middle])):
+        if _within_limit(specs[middle], ensemble.predict(specs[middle]), a):
             hi = middle
         else:
             lo = middle + 1
     return settings[hi], tested
+
+
+def session_for(state: "RoomState", spec: CaseSpec) -> assisting.Session:
+    rules = state.rules()
+    return assisting.Session(
+        list(spec.machines), spec.ach, spec.room, ensemble, rules.assumptions,
+        lambda base: lowest_safe(base, rules), max_items=5 if ensemble.meta.get("people") else 3,
+        minimum_ach=rules.minimum_ach, standard=rules.chosen.name,
+    )
 
 
 @app.post("/api/explain")
@@ -151,9 +176,10 @@ def explain(state: RoomState) -> dict:
     """A plain-language account of the current room, written by a language model on AMD GPUs."""
     spec = state.spec()
     prediction = ensemble.predict(spec)
-    best, _ = lowest_safe(spec)
+    rules = state.rules()
+    best, _ = lowest_safe(spec, rules)
     try:
-        return explaining.explain(spec, prediction, ASSUMPTIONS, best)
+        return explaining.explain(spec, prediction, rules.assumptions(spec.machines), best, rules.describe(spec.machines))
     except llm.LanguageModelError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
@@ -168,10 +194,7 @@ class PositionRequest(BaseModel):
 def best_position(request: PositionRequest) -> dict:
     """Try one item across the floor, move it to the best place, and optionally re-tune the fan."""
     spec = request.state.spec()
-    session = assisting.Session(
-        list(spec.machines), spec.ach, spec.room, ensemble, ASSUMPTIONS, lowest_safe,
-        max_items=5 if ensemble.meta.get("people") else 3,
-    )
+    session = session_for(request.state, spec)
     started = time.perf_counter()
     try:
         before = session.result()
@@ -208,7 +231,8 @@ def schedule(request: ScheduleRequest) -> dict:
     """Read a production plan in plain words and return the day's fan schedule and its energy."""
     spec = request.state.spec()
     try:
-        return scheduling.build(spec, request.plan, ASSUMPTIONS, lowest_safe)
+        rules = request.state.rules()
+        return scheduling.build(spec, request.plan, rules, lambda base: lowest_safe(base, rules))
     except llm.LanguageModelError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     except (ValueError, KeyError, TypeError) as error:
@@ -229,10 +253,7 @@ class AssistantRequest(BaseModel):
 def assistant(request: AssistantRequest) -> dict:
     """Carry out a typed request: the language model plans, and Flowcast's own tools do the work."""
     spec = request.state.spec()
-    session = assisting.Session(
-        list(spec.machines), spec.ach, spec.room, ensemble, ASSUMPTIONS, lowest_safe,
-        max_items=5 if ensemble.meta.get("people") else 3,
-    )
+    session = session_for(request.state, spec)
     conversation = [{"role": t.role, "content": t.content} for t in request.conversation if t.role in ("user", "assistant")]
     try:
         outcome = assisting.run(session, conversation)
@@ -255,20 +276,20 @@ def optimise(state: RoomState) -> dict:
     every setting in one batch instead, which makes no such assumption.
     """
     base = state.spec()
+    rules = state.rules()
     started = time.perf_counter()
-    low, high = base.room.ach_range
-    settings = [float(ach) for ach in np.linspace(low, high, 137)]
-    specs = [CaseSpec(machines=base.machines, ach=ach, room=base.room) for ach in settings]
+    settings = fan_settings(base, rules)
     if SWEEP:
-        passing = [_within_limit(s, p) for s, p in zip(specs, ensemble.predict_many(specs))]
-        best = next((i for i, ok in enumerate(passing) if ok), None)
+        a = rules.assumptions(base.machines)
+        specs = [CaseSpec(machines=base.machines, ach=ach, room=base.room) for ach in settings]
+        passing = [_within_limit(s, p, a) for s, p in zip(specs, ensemble.predict_many(specs))]
+        found = next((settings[i] for i, ok in enumerate(passing) if ok), None)
         tested = len(specs)
     else:
-        found, tested = lowest_safe(base)
-        best = settings.index(found) if found is not None else None
+        found, tested = lowest_safe(base, rules)
     return {
-        "ach": settings[best] if best is not None else settings[-1],
-        "feasible": best is not None,
+        "ach": found if found is not None else settings[-1],
+        "feasible": found is not None,
         "tested": tested,
         "seconds": time.perf_counter() - started,
         "device": ensemble.device.type,
@@ -276,13 +297,14 @@ def optimise(state: RoomState) -> dict:
     }
 
 
-def _simulate(job_id: str, spec: CaseSpec, predicted: dict, prediction: Prediction) -> None:
+def _simulate(job_id: str, spec: CaseSpec, predicted: dict, prediction: Prediction, rules: Rules) -> None:
     job = jobs[job_id]
     job["status"] = "running"
     started = time.perf_counter()
     try:
+        a = rules.assumptions(spec.machines)
         data = np.load(run_case(spec, VERIFY / job_id))
-        simulated = summarise(spec, data["fluid"], data["particles"], data["age"], ASSUMPTIONS)
+        simulated = summarise(spec, data["fluid"], data["particles"], data["age"], a)
         gap = abs(predicted["worst_level"] - simulated["worst_level"]) / max(simulated["worst_level"], 1e-9)
         same_side = predicted["within_limit"] == simulated["within_limit"]
         speed = np.linalg.norm(data["velocity"], axis=0)
@@ -295,8 +317,8 @@ def _simulate(job_id: str, spec: CaseSpec, predicted: dict, prediction: Predicti
             agrees=bool(gap <= AGREEMENT_TOLERANCE and (same_side or not spec.machines)),
             seconds=time.perf_counter() - started,
             payload=payload.build(
-                spec, data["fluid"], data["velocity"], data["particles"], data["age"], ASSUMPTIONS, source="simulation"
-            ),
+                spec, data["fluid"], data["velocity"], data["particles"], data["age"], a, source="simulation"
+            ) | {"standard": rules.describe(spec.machines)},
         )
     except Exception as error:  # report the failure to the interface instead of losing it
         job.update(status="failed", error=str(error))
@@ -306,18 +328,19 @@ def _simulate(job_id: str, spec: CaseSpec, predicted: dict, prediction: Predicti
 def verify(state: RoomState) -> dict:
     """Run a real OpenFOAM simulation of this room and compare it with the prediction."""
     spec = state.spec()
+    rules = state.rules()
     prediction = ensemble.predict(spec)
-    predicted = summarise(spec, prediction.fluid, prediction.particles, prediction.age, ASSUMPTIONS)
+    predicted = summarise(spec, prediction.fluid, prediction.particles, prediction.age, rules.assumptions(spec.machines))
     job_id = uuid.uuid4().hex[:12]
     jobs[job_id] = {"id": job_id, "status": "queued"}
-    simulations.submit(_simulate, job_id, spec, predicted, prediction)
+    simulations.submit(_simulate, job_id, spec, predicted, prediction, rules)
     return jobs[job_id]
 
 
 MAX_CONFIRMATIONS = 5
 
 
-def _confirm(job_id: str, base: CaseSpec) -> None:
+def _confirm(job_id: str, base: CaseSpec, rules: Rules) -> None:
     """The model proposes a fan setting; real simulations check it and step it up until one passes.
 
     Measured on unseen rooms, about one in five of the model's own recommendations is too
@@ -327,8 +350,9 @@ def _confirm(job_id: str, base: CaseSpec) -> None:
     job["status"] = "running"
     started = time.perf_counter()
     try:
-        low, high = base.room.ach_range
-        proposed, tested = lowest_safe(base)
+        a = rules.assumptions(base.machines)
+        high = base.room.ach_range[1]
+        proposed, tested = lowest_safe(base, rules)
         job["predictions"] = tested
         if proposed is None:
             job.update(status="done", confirmed=False, note=f"The model finds no safe setting up to {high:g} air changes an hour.")
@@ -337,18 +361,18 @@ def _confirm(job_id: str, base: CaseSpec) -> None:
         for attempt in range(MAX_CONFIRMATIONS):
             spec = CaseSpec(machines=base.machines, ach=ach, room=base.room)
             p = ensemble.predict(spec)
-            predicted = summarise(spec, p.fluid, p.particles, p.age, ASSUMPTIONS)
-            job["trail"].append({"ach": ach, "predicted_percent": round(100 * predicted["worst_level"] / ASSUMPTIONS.particle_limit),
+            predicted = summarise(spec, p.fluid, p.particles, p.age, a)
+            job["trail"].append({"ach": ach, "predicted_percent": round(100 * predicted["worst_level"] / a.particle_limit),
                                  "simulated_percent": None, "passed": None})
             data = np.load(run_case(spec, VERIFY / f"{job_id}-{attempt}"))
-            simulated = summarise(spec, data["fluid"], data["particles"], data["age"], ASSUMPTIONS)
-            ratio = simulated["worst_level"] / ASSUMPTIONS.particle_limit
+            simulated = summarise(spec, data["fluid"], data["particles"], data["age"], a)
+            ratio = simulated["worst_level"] / a.particle_limit
             job["trail"][-1].update(simulated_percent=round(100 * ratio), passed=bool(ratio <= 1))
             if ratio <= 1:
                 job.update(
                     status="done", confirmed=True, ach=ach, model_ach=proposed, seconds=time.perf_counter() - started,
                     payload=payload.build(spec, data["fluid"], data["velocity"], data["particles"], data["age"],
-                                          ASSUMPTIONS, source="simulation"),
+                                          a, source="simulation") | {"standard": rules.describe(spec.machines)},
                 )
                 return
             if ach >= high:
@@ -367,7 +391,7 @@ def confirm_fan(state: RoomState) -> dict:
     spec = state.spec()
     job_id = uuid.uuid4().hex[:12]
     jobs[job_id] = {"id": job_id, "status": "queued", "trail": []}
-    simulations.submit(_confirm, job_id, spec)
+    simulations.submit(_confirm, job_id, spec, state.rules())
     return jobs[job_id]
 
 

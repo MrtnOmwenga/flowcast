@@ -51,6 +51,7 @@ export interface RoomInfo {
 export interface Payload {
   source: "model" | "simulation";
   compute?: { hardware: string; gpu: boolean; seconds: number; models: number };
+  standard?: StandardInfo;
   grid: { shape: [number, number, number]; cell: number; size: [number, number, number] };
   room: RoomInfo;
   machines: Machine[];
@@ -68,4 +69,19 @@ export interface Payload {
 export interface RoomState {
   machines: Machine[];
   ach: number;
+  standard?: string;
+  minimum_ach?: number;
+}
+
+export interface StandardInfo {
+  id: string;
+  name: string;
+  source: string;
+  in_operation: number;
+  at_rest: number;
+  state: "in operation" | "at rest";
+  minimum_ach: number;
+  lead_minutes: number;
+  cleanup_minutes: number;
+  choices: { id: string; name: string; in_operation: number; at_rest: number }[];
 }

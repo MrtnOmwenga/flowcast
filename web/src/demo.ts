@@ -48,7 +48,7 @@ let day: DaySchedule | null = null;
 let planning = false;
 let scene: RoomScene | null = null;
 
-let state: RoomState = { machines: [], ach: 20 };
+let state: RoomState = { machines: [], ach: 20, standard: "gmp-c", minimum_ach: 10 };
 let fields: Fields | null = null;
 let payload: Payload | null = null;
 let online = false;
@@ -62,6 +62,7 @@ let answer: AgentAnswer | null = null;
 let asking = false;
 let draft = "";
 const EXAMPLES = [
+  "Clear the room and set it up as a small filling suite: an isolator by the far wall, a workbench near the return wall, and two operators at the isolator.",
   "What is the lowest fan setting I can safely run, and what does it save?",
   "Move whichever item does the most harm to a better place, then find the lowest safe setting.",
   "The operators have gone home. What can the fans drop to overnight?",
@@ -151,7 +152,12 @@ function changed(layoutChanged: boolean): void {
 }
 
 function fanRange(): [number, number] {
-  return payload?.room.ach_range ?? [6, 40];
+  const [low, high] = payload?.room.ach_range ?? [6, 40];
+  return [Math.max(low, state.minimum_ach ?? low), high];
+}
+
+function inOperation(machines: Machine[]): boolean {
+  return machines.some((m) => m.on);
 }
 
 function maxItems(): number {
@@ -233,12 +239,25 @@ function render(): void {
     <div class="designs" data-tour="designs">
       ${DESIGNS.map((d, i) => `<button class="design ${i === 0 ? "active" : ""}" ${d.ready ? "" : "disabled"} title="${d.note}">${d.name}${d.ready ? "" : SOON}<small>${d.note}</small></button>`).join("")}
     </div>
+    ${payload.standard ? `
+    <section class="rules" data-tour="rules">
+      <h2>What the room must meet</h2>
+      <div class="rule-row">
+        <label for="standard">Standard</label>
+        <select id="standard">${payload.standard.choices.map((c) => `<option value="${c.id}" ${c.id === payload!.standard!.id ? "selected" : ""}>${c.name}</option>`).join("")}</select>
+      </div>
+      <div class="rule-row">
+        <label for="minimum">Site minimum fan setting</label>
+        <input id="minimum" type="number" min="${payload.room.ach_range?.[0] ?? 6}" max="30" step="1" value="${state.minimum_ach ?? 10}" />
+      </div>
+      <p class="muted small">Limit ${payload.standard.state}: <b>${number(a.particle_limit)}</b> per m³. In operation ${number(payload.standard.in_operation)}, at rest ${number(payload.standard.at_rest)} (${payload.standard.source}).</p>
+    </section>` : ""}
     ${online ? "" : `<p class="warn">Showing one stored simulation. The prediction service is not connected.</p>`}
     ${note ? `<p class="warn">${escape(note)}</p>` : ""}
 
     <section class="readouts" data-tour="readouts">
       <h2>The room now</h2>
-      <div class="status ${verdict}">${verdict === "ok" ? "Within the particle limit" : verdict === "close" ? "Too close to the limit to call: verify" : "Over the particle limit"}${stale ? " (updating…)" : ""}</div>
+      <div class="status ${verdict}">${verdict === "ok" ? "Within the limit" : verdict === "close" ? "Too close to the limit to call: verify" : "Over the limit"}${payload.standard ? `, ${payload.standard.state}` : ""}${stale ? " (updating…)" : ""}</div>
       <div class="meter"><div class="fill ${verdict}" style="width:${bar}%"></div><div class="tick"></div></div>
       <dl class="grid">
         <div><dt>Worst point</dt><dd>${number(ratio * 100)}% <small>of the limit</small></dd></div>
@@ -408,6 +427,7 @@ const TOOL_NAMES: Record<string, string> = {
   set_running: "Switched an item",
   add_item: "Added an item",
   remove_item: "Removed an item",
+  clear_room: "Cleared the room",
   set_fan: "Set the fan",
   find_lowest_safe_fan: "Searched for the lowest safe fan setting",
   find_best_position: "Searched the floor for the best position",
@@ -439,7 +459,7 @@ async function ask(text: string): Promise<void> {
     conversation = [...conversation, { role: "assistant", content: result.reply }];
     answer = result;
     draft = "";
-    state = result.state;
+    state = { ...state, ...result.state };
     scene!.setMachines(state.machines);
     verification = null;
     explanation = null;
@@ -478,8 +498,9 @@ function dayHtml(): string {
     return `<button class="bar" data-period="${i}" style="flex:${p.hours};height:${height}%" title="${p.start} to ${p.end}: ${number(p.ach, 1)} air changes"></button>`;
   }).join("");
   const rows = day.periods.map((p, i) => {
-    const who = p.on.map((n) => nameOf(state.machines[n - 1] ?? state.machines[0])).join(", ") || "nothing running, nobody in";
-    return `<tr data-period="${i}"><td>${p.start}–${p.end}</td><td>${escape(who)}</td><td>${number(p.ach, 1)}${p.feasible ? "" : " *"}</td><td>${number(p.power_kw, 2)}</td></tr>`;
+    const who = p.kind === "lead" ? "fans up before staff arrive" : p.kind === "clean-up" ? "clean-up after work"
+      : p.on.map((n) => nameOf(state.machines[n - 1] ?? state.machines[0])).join(", ") || "nothing running, nobody in";
+    return `<tr data-period="${i}" class="${p.kind}"><td>${p.start}–${p.end}</td><td>${escape(who)}<small>${p.kind === "plan" ? ` ${p.state}` : ""}</small></td><td>${number(p.ach, 1)}${p.feasible ? "" : " *"}</td><td>${number(p.power_kw, 2)}</td></tr>`;
   }).join("");
   return `
     <div class="day"><div class="today" style="bottom:${18 + 82 * ((day.today_ach - low) / (high - low))}%"><span>today: ${number(day.today_ach)} all day</span></div>${bars}</div>
@@ -487,6 +508,7 @@ function dayHtml(): string {
     <table class="schedule"><thead><tr><th>When</th><th>In the room</th><th>Fan</th><th>kW</th></tr></thead><tbody>${rows}</tbody></table>
     ${day.periods.some((p) => !p.feasible) ? `<p class="muted small">* No setting in range is safe for this state; the highest is shown.</p>` : ""}
     <div class="status ok">${number(day.kwh_per_day, 1)} kWh for the day, against ${number(day.kwh_per_day_today, 1)} at today's setting: ${number(day.saving_percent)}% less, about $${number(day.saving_per_year)} a year</div>
+    <p class="muted small">Held to ${escape(day.standard.name)}: the looser limit while the room is in operation and the stricter one at rest. The fans come up ${day.standard.lead_minutes} minutes before staff arrive and stay up for a ${day.standard.cleanup_minutes}-minute clean-up after work, and never go below the site minimum of ${number(day.standard.minimum_ach)}.</p>
     <p class="muted small">Click a row to see that part of the day in the room. ${day.room_states} different room states, ${day.settings_tested} fan settings tested by the model. These are the model's settings; confirm each by simulation before using them.</p>
     <p class="compute blue">Plan read by ${escape(day.model)} on ${escape(day.hosted_on)}</p>`;
 }
@@ -509,7 +531,7 @@ async function buildSchedule(): Promise<void> {
 function showPeriod(index: number): void {
   if (!day) return;
   const period = day.periods[index];
-  state = { ach: period.ach, machines: state.machines.map((m, i) => ({ ...m, on: period.on.includes(i + 1) })) };
+  state = { ...state, ach: period.ach, machines: state.machines.map((m, i) => ({ ...m, on: period.on.includes(i + 1) })) };
   scene!.setMachines(state.machines);
   verification = null;
   confirmation = null;
@@ -594,9 +616,11 @@ function bind(): void {
   panel.querySelectorAll<HTMLInputElement>("[data-toggle]").forEach((box) =>
     box.addEventListener("change", () => {
       const i = Number(box.dataset.toggle);
+      const before = inOperation(state.machines);
       state = { ...state, machines: state.machines.map((m, k) => (k === i ? { ...m, on: box.checked } : m)) };
       scene!.setMachines(state.machines);
-      changed(false);
+      // The limit differs between a working room and an empty one, so crossing over asks the service again.
+      changed(before !== inOperation(state.machines));
     }),
   );
   panel.querySelectorAll<HTMLButtonElement>("[data-rotate]").forEach((button) =>
@@ -637,6 +661,19 @@ function bind(): void {
   );
   panel.querySelector<HTMLButtonElement>("#verify")?.addEventListener("click", () => void verify());
   panel.querySelector<HTMLButtonElement>("#explain")?.addEventListener("click", () => void explain());
+  const standard = panel.querySelector<HTMLSelectElement>("#standard");
+  standard?.addEventListener("change", () => {
+    state = { ...state, standard: standard.value };
+    day = null;
+    changed(true);
+  });
+  const minimum = panel.querySelector<HTMLInputElement>("#minimum");
+  minimum?.addEventListener("change", () => {
+    const value = Math.min(30, Math.max(payload?.room.ach_range?.[0] ?? 6, Number(minimum.value) || 0));
+    state = { ...state, minimum_ach: value, ach: Math.max(state.ach, value) };
+    day = null;
+    changed(true);
+  });
   const picker = panel.querySelector<HTMLSelectElement>("#task");
   picker?.addEventListener("change", () => setTask(picker.value as Task));
   const item = panel.querySelector<HTMLSelectElement>("#position-item");
@@ -662,7 +699,7 @@ async function findPosition(): Promise<void> {
   render();
   try {
     const result = await api.bestPosition(state, positionItem + 1, positionThenFan);
-    state = result.state;
+    state = { ...state, ...result.state };
     scene!.setMachines(state.machines);
     verification = null;
     explanation = null;
@@ -716,7 +753,7 @@ async function verify(): Promise<void> {
 async function start(): Promise<void> {
   render();
   const sample = await api.sample();
-  state = { machines: sample.machines, ach: sample.metrics.ach };
+  state = { ...state, machines: sample.machines, ach: Math.max(sample.metrics.ach, state.minimum_ach ?? 0) };
   scene!.setRoom(sample.grid.size, sample.room);
   scene!.setMachines(state.machines);
   scene!.setSlice(sliceMode, sliceHeight);

@@ -17,6 +17,11 @@ const STEPS: Step[] = [
     body: "You are looking into a small cleanroom. Clean air comes in through the four blue ceiling panels and leaves through the grey grille low on one end wall. The moving dots follow the predicted airflow and turn from blue to red where the particle level is high. Drag the background to orbit and scroll to zoom. Drag a machine or a person to move it: each move is sent to the model, which returns the whole room's air in about a tenth of a second.",
   },
   {
+    target: '[data-tour="rules"]',
+    title: "What the room must meet",
+    body: "The room is held to a published standard. A pharmaceutical grade has two limits: a looser one in operation, while anything is running or anyone is in, and a stricter one at rest. Flowcast applies whichever fits the room as it stands, and no search goes below the site's own minimum fan setting.",
+  },
+  {
     target: '[data-tour="readouts"]',
     title: "The room now",
     body: "The headline says whether the worst point in the room is within its particle limit. Amber means too close to call. The saving is against the fan setting the room runs at today. Confidence drops when four independently trained models disagree about this layout.",

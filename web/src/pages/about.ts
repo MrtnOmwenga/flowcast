@@ -25,6 +25,26 @@ export function about(): string {
       <li><b>Checks itself.</b> On request it runs a real simulation of the room as set and compares the result with its own prediction.</li>
     </ol>
 
+    <h2>What the room must meet</h2>
+    <p>A room is not judged against a number we chose. It is held to a published standard, and Flowcast works to whichever one you select.</p>
+    <table>
+      <thead><tr><th>Standard</th><th>Limit in operation</th><th>Limit at rest</th></tr></thead>
+      <tbody>
+        <tr><td>EU GMP grade C</td><td>3,520,000</td><td>352,000</td></tr>
+        <tr><td>EU GMP grade B</td><td>352,000</td><td>3,520</td></tr>
+        <tr><td>ISO class 8</td><td colspan="2">3,520,000</td></tr>
+        <tr><td>ISO class 7</td><td colspan="2">352,000</td></tr>
+        <tr><td>ISO class 6</td><td colspan="2">35,200</td></tr>
+      </tbody>
+    </table>
+    <p>Figures are particles of 0.5 micrometres and larger per cubic metre, from EU GMP Annex 1 (2022), Table 1, and ISO 14644-1. A room is "in operation" while anything is running or anyone is in it, and "at rest" otherwise.</p>
+    <ul>
+      <li><b>The limit follows the state of the room.</b> A pharmaceutical grade has a looser limit while people are working and a stricter one when the room is empty, and Flowcast applies the right one to each part of the day.</li>
+      <li><b>The site sets a floor.</b> No search goes below the site's minimum fan setting.</li>
+      <li><b>The fans lead and lag the work.</b> In a day's schedule they come up 20 minutes before staff arrive and stay up for a 20-minute clean-up afterwards, the guidance value Annex 1 gives for returning a room to its at-rest state.</li>
+      <li><b>What is not covered:</b> the pressure a room must hold against its neighbours, temperature and humidity, and microbial limits. Flowcast is about airborne particles and the air that carries them.</li>
+    </ul>
+
     <h2>Who it is for</h2>
     <p>The process or facilities engineer responsible for a room, who needs to know before making a change whether the room stays within its limit and what the fans can drop to. The buyer is whoever pays the energy bill and carries the compliance risk.</p>
 

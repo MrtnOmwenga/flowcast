@@ -92,6 +92,9 @@ export interface DayPeriod {
   ach: number;
   power_kw: number;
   feasible: boolean;
+  kind: "plan" | "lead" | "clean-up";
+  state: "in operation" | "at rest";
+  limit: number;
 }
 
 export interface DaySchedule {
@@ -103,6 +106,7 @@ export interface DaySchedule {
   room_states: number;
   settings_tested: number;
   today_ach: number;
+  standard: { name: string; lead_minutes: number; cleanup_minutes: number; minimum_ach: number };
   model: string;
   hosted_on: string;
 }

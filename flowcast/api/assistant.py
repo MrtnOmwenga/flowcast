@@ -29,7 +29,10 @@ Rules:
 - Every number you state must come from a tool result. Never estimate or invent one.
 - The room is {length} m long (x, measured from the return wall), {width} m wide (y) and {height} m high.
   Items stand on the floor; positions are of an item's corner nearest x = 0, y = 0, in steps of 0.2 m.
+- The room is held to a cleanliness standard with two limits: a looser one "in operation" (anything running or
+  anyone present) and a stricter one "at rest" (everything off and nobody in). `look` says which applies now.
 - The particle limit applies at the worst point of the occupied zone. "Safe" means at least {margin}% under it.
+- The site has a minimum fan setting; no search goes below it.
 - When asked to save energy, the goal is the lowest safe fan setting; use `find_lowest_safe_fan`.
 - Two items cannot share floor space, and nothing can be stacked on anything else. If a request is impossible,
   say why and suggest the nearest thing that is possible; do not keep retrying.
@@ -58,6 +61,7 @@ TOOLS = [
     _tool("add_item", "Add an item to the room at a position.",
           {"what": {"type": "string", "enum": KINDS}, "x": {"type": "number"}, "y": {"type": "number"}}, ["what", "x", "y"]),
     _tool("remove_item", "Remove an item from the room.", {"item": _ITEM}, ["item"]),
+    _tool("clear_room", "Remove every item, leaving an empty room to set up from scratch."),
     _tool("set_fan", "Set the fan, in air changes an hour.", {"air_changes_per_hour": {"type": "number"}}, ["air_changes_per_hour"]),
     _tool("find_lowest_safe_fan", "Search the fan settings for the lowest that is safe for the room as it stands, and set it."),
     _tool("find_best_position", "Try an item at many positions across the floor and move it to the one with the lowest "
@@ -69,22 +73,30 @@ class Session:
     """The room as the agent is changing it, with the tools that act on it."""
 
     def __init__(self, machines: list[Machine], ach: float, room: Room, ensemble: Ensemble,
-                 assumptions: Assumptions, lowest_safe: Callable[[CaseSpec], tuple[float | None, int]], max_items: int):
+                 assume: Callable[[list[Machine]], Assumptions], lowest_safe: Callable[[CaseSpec], tuple[float | None, int]],
+                 max_items: int, minimum_ach: float = 0.0, standard: str = ""):
         self.machines = list(machines)
         self.ach = ach
         self.room = room
         self.ensemble = ensemble
-        self.a = assumptions
+        self.assume = assume
         self.lowest_safe = lowest_safe
         self.max_items = max_items
+        self.minimum_ach = minimum_ach
+        self.standard = standard
         self.steps: list[dict] = []
+
+    @property
+    def a(self) -> Assumptions:
+        """The limit and release rates that apply to the room as it stands: staffed or empty."""
+        return self.assume(self.machines)
 
     def spec(self, machines: list[Machine] | None = None, ach: float | None = None) -> CaseSpec:
         spec = CaseSpec(machines=tuple(self.machines if machines is None else machines),
                         ach=self.ach if ach is None else ach, room=self.room)
-        low, high = self.room.ach_range
+        low, high = max(self.room.ach_range[0], self.minimum_ach), self.room.ach_range[1]
         if not low <= spec.ach <= high:
-            raise ValueError(f"the fan setting must be between {low:g} and {high:g} air changes an hour")
+            raise ValueError(f"the fan setting must be between {low:g} (the site minimum) and {high:g} air changes an hour")
         spec.validate()
         return spec
 
@@ -131,7 +143,10 @@ class Session:
             "number": i + 1, "what": item_name(m), "x": m.x, "y": m.y, "length_x": m.sx, "width_y": m.sy, "height": m.sz,
             "state": ("present" if m.on else "away") if m.kind == "person" else ("running" if m.on else "off"),
         } for i, m in enumerate(self.machines)]
-        return {"items": items, "result": self.result(), "fan_range": list(self.room.ach_range),
+        return {"items": items, "result": self.result(),
+                "standard": self.standard, "state": "in operation" if any(m.on for m in self.machines) else "at rest",
+                "particle_limit_per_m3": self.a.particle_limit,
+                "fan_range": [max(self.room.ach_range[0], self.minimum_ach), self.room.ach_range[1]],
                 "fan_setting_today": self.a.full_ach, "fan_power_today_kw": self.a.full_fan_power_kw}
 
     def move_item(self, item: int, x: float, y: float) -> dict:
@@ -174,6 +189,11 @@ class Session:
         i = self._item(item)
         removed = item_name(self.machines.pop(i))
         return {"removed": removed, "note": "the remaining items have been renumbered", "result": self.result()}
+
+    def clear_room(self) -> dict:
+        removed = len(self.machines)
+        self.machines = []
+        return {"removed": removed, "result": self.result()}
 
     def set_fan(self, air_changes_per_hour: float) -> dict:
         self.spec(ach=float(air_changes_per_hour))
