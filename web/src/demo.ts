@@ -39,8 +39,8 @@ let asking = false;
 let draft = "";
 const EXAMPLES = [
   "What is the lowest fan setting I can safely run, and what does it save?",
-  "Find a better place for the filling machine, then the lowest safe setting.",
-  "Add a second workbench where it does the least harm.",
+  "Move whichever item does the most harm to a better place, then find the lowest safe setting.",
+  "The operators have gone home. What can the fans drop to overnight?",
 ];
 let explanation: Explanation | null = null;
 let explaining = false;
