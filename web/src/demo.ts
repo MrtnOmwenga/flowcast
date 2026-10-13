@@ -14,15 +14,25 @@ const CATALOGUE: Record<string, [number, number, number]> = {
   Cart: [0.8, 0.6, 0.8],
 };
 const PERSON: [number, number, number] = [0.4, 0.4, 1.8];
+// Room designs. Each has its own trained models; only the first is wired into the page so far.
+const DESIGNS = [
+  { name: "Ceiling panels", note: "Four supply panels, one return wall", ready: true },
+  { name: "Filter ceiling", note: "Air moves straight down; models trained", ready: false },
+  { name: "Cross-flow", note: "Filter wall to return wall", ready: false },
+];
+const SOON = `<span class="soon">soon</span>`;
+
 // The limits the served models were trained within. Models trained with people allow more.
 const LIMITS = { basic: { items: 3, kinds: ["Workbench", "Cabinet", "Filling machine", "Small unit", "Isolator"] } };
 const TOUR_SEEN = "flowcast-tour-seen";
 
-type Task = "explore" | "optimise" | "plan" | "confirm";
-const TASKS: { id: Task; name: string; about: string }[] = [
+type Task = "explore" | "optimise" | "plan" | "confirm" | "change" | "report";
+const TASKS: { id: Task; name: string; about: string; soon?: boolean }[] = [
   { id: "explore", name: "Explore", about: "Change the room by hand and watch the air respond. Each change is predicted by the model in about a tenth of a second." },
   { id: "optimise", name: "Optimise", about: "Let Flowcast search. The model is run many times to find the best fan setting or the best place for an item." },
   { id: "plan", name: "Plan a day", about: "Give Flowcast the day's production plan in your own words. A language model reads it, and the airflow model sets the fans for each part of the day." },
+  { id: "change", name: "Assess a change", soon: true, about: "Paste a change request. Flowcast tests the change, confirms it by simulation and drafts the airflow section of the assessment." },
+  { id: "report", name: "Report", soon: true, about: "Take the result away: a change report, a side-by-side comparison of two layouts, and a table of fan settings for the building controls." },
   { id: "confirm", name: "Confirm", about: "Check the model against a real OpenFOAM simulation of the room exactly as it is set. This takes about a minute." },
 ];
 
@@ -221,6 +231,9 @@ function render(): void {
       <h1>Cleanroom demo</h1>
       <button class="ghost" id="tour">How to use this</button>
     </div>
+    <div class="designs" data-tour="designs">
+      ${DESIGNS.map((d, i) => `<button class="design ${i === 0 ? "active" : ""}" ${d.ready ? "" : "disabled"} title="${d.note}">${d.name}${d.ready ? "" : SOON}<small>${d.note}</small></button>`).join("")}
+    </div>
     ${online ? "" : `<p class="warn">Showing one stored simulation. The prediction service is not connected.</p>`}
     ${note ? `<p class="warn">${escape(note)}</p>` : ""}
 
@@ -237,15 +250,16 @@ function render(): void {
         ${confidence === undefined ? "" : `<div><dt>Model confidence</dt><dd class="${confidence < 0.6 ? "amber" : ""}">${confidence < 0.6 ? "Low" : "Good"}</dd></div>`}
       </dl>
       ${confidence !== undefined && confidence < 0.6 ? `<p class="muted small">The models disagree about this layout. Confirm it by simulation before relying on it.</p>` : ""}
-      ${languageModel ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button></div>` : ""}
+      ${languageModel ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button>
+        <select class="inline" disabled title="Not built yet"><option>English</option><option>Italiano</option><option>Kiswahili</option></select>${SOON}</div>` : ""}
       ${explanation ? `<div class="explanation">${explanation.text.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute">${escape(explanation.model)} on ${escape(explanation.hosted_on)}</p></div>` : ""}
       <p class="compute">${payload.source !== "model" || !payload.compute ? "OpenFOAM simulation" : `${payload.compute.models} models on ${payload.compute.hardware} · ${number(payload.compute.seconds * 1000)} ms`}</p>
     </section>
 
     <div class="tabs" data-tour="tasks">
-      ${TASKS.map((k) => `<button class="tab ${k.id === task ? "active" : ""}" data-task="${k.id}">${k.name}</button>`).join("")}
+      ${TASKS.map((k) => `<button class="tab ${k.id === task ? "active" : ""} ${k.soon ? "preview" : ""}" data-task="${k.id}">${k.name}</button>`).join("")}
     </div>
-    <p class="muted small about">${current.about}</p>
+    <p class="muted small about">${current.soon ? `${SOON} ` : ""}${current.about}</p>
 
     ${task === "explore" ? `
     <section data-tour="fan">
@@ -263,12 +277,14 @@ function render(): void {
           <span>${m.sx === m.sy ? "" : `<button class="link" data-rotate="${i}">turn</button> `}<button class="link" data-remove="${i}">remove</button></span>
         </div>`).join("") || `<p class="muted small">The room is empty.</p>`}
       ${state.machines.length < maxItems() ? `<select id="add"><option value="">Add ${people ? "equipment or a person" : "equipment"}…</option>${choices().map((k) => `<option>${k}</option>`).join("")}</select>` : `<p class="muted small">The model was trained on rooms with up to ${maxItems()} items.</p>`}
+      <div class="row"><button class="ghost" disabled>Import an item from a datasheet</button>${SOON}</div>
     </section>
 
     <section data-tour="view">
       <h2>What the picture shows</h2>
       <div class="row">
         ${(["particles", "age", "off"] as SliceMode[]).map((m) => `<button class="chip ${sliceMode === m ? "active" : ""}" data-slice="${m}">${m === "particles" ? "Particle level" : m === "age" ? "Stagnant air" : "No slice"}</button>`).join("")}
+        <button class="chip" disabled title="Comes with the control cabinet demo">Air temperature</button>
       </div>
       <label>Slice height <b>${number(sliceHeight, 1)}</b> m</label>
       <input id="height" type="range" min="0.1" max="${fields.size[2] - 0.1}" step="0.2" value="${sliceHeight}" />
@@ -304,6 +320,33 @@ function render(): void {
       <div class="row"><button id="schedule" ${online && languageModel && !planning ? "" : "disabled"}>${planning ? "Reading the plan…" : "Build the fan schedule"}</button></div>
       ${languageModel ? "" : `<p class="warn">Reading a plan needs the language model, which is not connected.</p>`}
       ${dayHtml()}
+      <div class="row"><button class="ghost" disabled>Confirm every period by simulation</button>${SOON}</div>
+      <div class="row"><button class="ghost" disabled>Send the schedule to the building controls</button>${SOON}</div>
+    </section>` : ""}
+
+    ${task === "change" ? `
+    <section class="preview-block">
+      <h2>The change request</h2>
+      <textarea rows="5" disabled>CR-0412: Install a second filling machine beside the isolator to raise output on line 2. Target date: next shutdown.</textarea>
+      <div class="row"><button disabled>Assess this change</button></div>
+      <h2>What comes back</h2>
+      <ol class="steps muted">
+        <li><b>The change, as understood</b><small>which item, where, and what it replaces</small></li>
+        <li><b>The room before and after</b><small>worst point, stagnant air and counter position</small></li>
+        <li><b>The lowest safe fan setting after the change</b><small>found by the model, confirmed by simulation</small></li>
+        <li><b>A drafted airflow section</b><small>written for the change control record, with every figure traced to a simulation</small></li>
+      </ol>
+    </section>` : ""}
+
+    ${task === "report" ? `
+    <section class="preview-block">
+      <h2>Take the result away</h2>
+      <div class="row"><button disabled>Download the change report</button></div>
+      <p class="muted small">One page: the layout, the prediction, the confirming simulation and the recommended setting.</p>
+      <div class="row"><button disabled>Compare with another layout</button></div>
+      <p class="muted small">Two rooms side by side, with the difference in worst point, fan setting and energy.</p>
+      <div class="row"><button disabled>Fan settings for the building controls</button></div>
+      <p class="muted small">A table with one setting for each state of the room: empty, staffed, each machine running.</p>
     </section>` : ""}
 
     ${task === "confirm" ? `
@@ -313,6 +356,8 @@ function render(): void {
       <div class="row"><button id="verify" ${online && !busy ? "" : "disabled"}>Verify by simulation</button></div>
       ${busy ? `<p class="muted small">${busy}</p>` : ""}
       ${verificationHtml()}
+      <div class="row"><button class="ghost" disabled>Add this room to the training data</button>${SOON}</div>
+      <p class="muted small">Every confirmed room can become a training example, so the model improves where it is used.</p>
     </section>` : ""}
 
     <details>
@@ -333,19 +378,18 @@ function renderAsk(): void {
   }
   askBar.hidden = false;
   askBar.innerHTML = `
-    <div class="ask-input" data-tour="ask">
-      <h2>Ask Flowcast</h2>
-      <textarea id="question" rows="2" placeholder="Describe what you want to do with this room" ${asking ? "disabled" : ""}>${escape(draft)}</textarea>
-      <div class="row">
+    ${asking ? `<div class="ask-output"><p class="muted small">Planning, and testing each step with the airflow model…</p></div>` : ""}
+    ${answer ? `<div class="ask-output">
+        <ol class="steps">${answer.steps.map(stepHtml).join("")}</ol>
+        <div class="explanation">${answer.reply.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute blue">${escape(answer.model)} on ${escape(answer.hosted_on)}</p></div>
+      </div>` : ""}
+    <div class="ask-box" data-tour="ask">
+      <textarea id="question" rows="2" placeholder="Ask Flowcast: describe what you want to do with this room" ${asking ? "disabled" : ""}>${escape(draft)}</textarea>
+      <div class="ask-suggestions">${EXAMPLES.map((e, i) => `<button class="suggestion" data-example="${i}" ${asking ? "disabled" : ""}>${escape(e)}</button>`).join("")}</div>
+      <div class="ask-foot">
+        <span class="muted small">A language model served on AMD GPUs plans the steps. Every figure comes from the airflow model.</span>
         <button id="ask" ${online && !asking ? "" : "disabled"}>${asking ? "Working…" : "Ask"}</button>
-        <span class="compute blue">A language model served on AMD GPUs</span>
       </div>
-    </div>
-    <div class="ask-output">
-      ${asking ? `<p class="muted small">Planning, and testing each step with the airflow model…</p>` : ""}
-      ${answer ? `<ol class="steps">${answer.steps.map(stepHtml).join("")}</ol>
-        <div class="explanation">${answer.reply.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute blue">${escape(answer.model)} on ${escape(answer.hosted_on)}</p></div>`
-      : asking ? "" : `<p class="muted small">Try one of these:</p><div class="examples">${EXAMPLES.map((e, i) => `<button class="link" data-example="${i}">${escape(e)}</button>`).join("")}</div>`}
     </div>`;
   const question = askBar.querySelector<HTMLTextAreaElement>("#question")!;
   question.addEventListener("input", () => (draft = question.value));
