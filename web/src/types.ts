@@ -6,7 +6,7 @@ export interface Machine {
   sz: number;
   on: boolean;
   emission: number;
-  kind: "machine" | "person";
+  kind: "machine" | "person" | "component";
 }
 
 export interface Metrics {

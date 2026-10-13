@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Fields } from "./field";
+import { buildItem, lampColour, type ItemModel } from "./models";
 import type { Machine, RoomInfo } from "./types";
 
 export type SliceMode = "particles" | "age" | "off";
@@ -173,17 +174,14 @@ export class RoomScene {
   setMachines(machines: Machine[]): void {
     this.machines = machines.map((m) => ({ ...m }));
     for (const mesh of this.machineMeshes) this.scene.remove(mesh);
+    // Each item is an invisible block, the shape that is simulated and dragged, carrying a
+    // detailed model drawn inside it.
     this.machineMeshes = this.machines.map((m) => {
-      const person = m.kind === "person";
-      const mesh = new THREE.Mesh(
-        person ? new THREE.CapsuleGeometry(Math.min(m.sx, m.sy) / 2, m.sz - Math.min(m.sx, m.sy), 6, 16) : new THREE.BoxGeometry(m.sx, m.sz, m.sy),
-        new THREE.MeshStandardMaterial(
-          person ? { color: 0x8fb8e6, roughness: 0.7 } : { color: 0xd4dae2, roughness: 0.45, metalness: 0.25 },
-        ),
-      );
-      if (!person) {
-        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x66717f })));
-      }
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(m.sx, m.sz, m.sy), new THREE.MeshBasicMaterial({ visible: false }));
+      const model = buildItem(m);
+      model.group.position.y = -m.sz / 2;
+      mesh.add(model.group);
+      mesh.userData.model = model;
       this.scene.add(mesh);
       return mesh;
     });
@@ -194,9 +192,12 @@ export class RoomScene {
     this.machines.forEach((m, i) => {
       const mesh = this.machineMeshes[i];
       this.toWorld(m.x + m.sx / 2, m.y + m.sy / 2, m.sz / 2, mesh.position);
-      const material = mesh.material as THREE.MeshStandardMaterial;
-      material.emissive.setHex(m.on ? 0xff7a2f : 0x000000);
-      material.emissiveIntensity = m.on ? 0.3 : 0;
+      const model = mesh.userData.model as ItemModel;
+      model.lamp.color.setHex(lampColour(m.on));
+      for (const material of model.glow) {
+        material.emissive.setHex(m.on && m.kind !== "person" ? 0xff7a2f : 0x000000);
+        material.emissiveIntensity = m.on ? 0.06 : 0;
+      }
     });
   }
 
