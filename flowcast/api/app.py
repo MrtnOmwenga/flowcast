@@ -1,6 +1,7 @@
 """The Flowcast service: uvicorn flowcast.api.app:app
 
 FLOWCAST_MODELS   directory holding the trained ensemble (default data/models)
+FLOWCAST_MODELS_CEILING, FLOWCAST_MODELS_CABINET   the same for the other room designs
 FLOWCAST_VERIFY   directory for verification simulations (default data/verify)
 """
 
@@ -26,6 +27,7 @@ from . import assistant as assisting
 from . import explain as explaining
 from . import llm, payload
 from . import schedule as scheduling
+from .heat import DEFAULT_LIMIT, LIMITS, CabinetRules
 from .metrics import Assumptions, protected_zone, summarise
 from .standards import DEFAULT_STANDARD, STANDARDS, Rules
 
@@ -42,7 +44,29 @@ DEFAULT_LOW_CONFIDENCE_SPREAD = 0.04
 
 app = FastAPI(title="Flowcast")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-ensemble = Ensemble(MODELS)
+# Each room design has its own trained models, loaded the first time the design is used
+MODEL_DIRS = {
+    "panels": MODELS,
+    "ceiling": Path(os.environ.get("FLOWCAST_MODELS_CEILING", "data/models-ceiling")),
+    "cabinet": Path(os.environ.get("FLOWCAST_MODELS_CABINET", "data/models-cabinet")),
+}
+ROOM_NAMES = {room: name for name, room in ROOMS.items()}
+ensembles: dict[str, Ensemble] = {}
+
+
+def ensemble_for(name: str) -> Ensemble:
+    if name not in ensembles:
+        if not (MODEL_DIRS.get(name) and (MODEL_DIRS[name] / "flow").exists()):
+            raise HTTPException(status_code=503, detail=f"no trained models for the {name} design yet")
+        ensembles[name] = Ensemble(MODEL_DIRS[name])
+    return ensembles[name]
+
+
+def model_for(spec: CaseSpec) -> Ensemble:
+    return ensemble_for(ROOM_NAMES[spec.room])
+
+
+ensemble = ensemble_for(DEFAULT_ROOM)
 SWEEP = os.environ.get("FLOWCAST_SWEEP") == "1"
 # Shown beside every answer. Set FLOWCAST_HARDWARE to name the exact card.
 HARDWARE = os.environ.get("FLOWCAST_HARDWARE", ensemble.hardware)
@@ -76,19 +100,33 @@ class MachineIn(BaseModel):
 
 
 class RoomState(BaseModel):
-    machines: list[MachineIn] = Field(default_factory=list, max_length=5)
+    machines: list[MachineIn] = Field(default_factory=list, max_length=6)
     ach: float = Field(gt=0)
+    room: str = DEFAULT_ROOM
     standard: str = DEFAULT_STANDARD
     minimum_ach: float = Field(default=10.0, ge=0)
+    # For a cabinet: the components' temperature rating and the air drawn in, in degrees Celsius
+    limit: str = DEFAULT_LIMIT
+    ambient: float = Field(default=35.0, ge=-10, le=55)
 
-    def rules(self) -> Rules:
+    def design(self):
+        if self.room not in ROOMS:
+            raise HTTPException(status_code=422, detail=f"unknown room design: {self.room}")
+        return ROOMS[self.room]
+
+    def rules(self) -> Rules | CabinetRules:
+        low, high = self.design().ach_range
+        minimum = min(max(self.minimum_ach, low), high)
+        if self.design().kind == "cabinet":
+            if self.limit not in LIMITS:
+                raise HTTPException(status_code=422, detail=f"unknown temperature limit: {self.limit}")
+            return CabinetRules(limit=self.limit, ambient=self.ambient, minimum_ach=minimum)
         if self.standard not in STANDARDS:
             raise HTTPException(status_code=422, detail=f"unknown standard: {self.standard}")
-        low, high = ROOMS[DEFAULT_ROOM].ach_range
-        return Rules(standard=self.standard, minimum_ach=min(max(self.minimum_ach, low), high))
+        return Rules(standard=self.standard, minimum_ach=minimum)
 
     def spec(self) -> CaseSpec:
-        room = ROOMS[DEFAULT_ROOM]
+        room = self.design()
         spec = CaseSpec(machines=tuple(Machine(**m.model_dump()) for m in self.machines), ach=self.ach, room=room)
         try:
             if not room.ach_range[0] <= self.ach <= room.ach_range[1]:
@@ -102,7 +140,7 @@ class RoomState(BaseModel):
 def confidence(spec: CaseSpec, prediction: Prediction) -> float:
     zone = protected_zone(spec, prediction.fluid, ASSUMPTIONS)  # the zone does not depend on the standard
     spread = float(prediction.spread[zone].mean()) if zone.any() else 0.0
-    threshold = ensemble.meta.get("low_confidence_spread", DEFAULT_LOW_CONFIDENCE_SPREAD)
+    threshold = model_for(spec).meta.get("low_confidence_spread", DEFAULT_LOW_CONFIDENCE_SPREAD)
     return max(0.0, 1.0 - 0.4 * spread / threshold)
 
 
@@ -113,22 +151,28 @@ def respond(spec: CaseSpec, prediction: Prediction, seconds: float, rules: Rules
     )
     body["standard"] = rules.describe(spec.machines)
     body["metrics"]["confidence"] = confidence(spec, prediction)
-    body["compute"] = {"hardware": HARDWARE, "gpu": ensemble.device.type == "cuda", "seconds": seconds,
-                       "models": ensemble.members}
+    models = model_for(spec)
+    body["room"]["design"] = ROOM_NAMES[spec.room]
+    body["room"]["kind"] = spec.room.kind
+    body["room"]["inlets"] = [list(o) for o in spec.room.inlet_openings()]
+    body["room"]["outlets"] = [list(o) for o in spec.room.outlet_openings()]
+    body["compute"] = {"hardware": HARDWARE, "gpu": models.device.type == "cuda", "seconds": seconds,
+                       "models": models.members}
     return body
 
 
 @app.get("/api/health")
 def health() -> dict:
     return {"models": ensemble.members, "device": str(ensemble.device), "hardware": HARDWARE,
-            "language_model": llm.model_name() if llm.available() else None, **ensemble.meta}
+            "language_model": llm.model_name() if llm.available() else None, **ensemble.meta,
+            "designs": {name: (path / "flow").exists() for name, path in MODEL_DIRS.items()}}
 
 
 @app.post("/api/predict")
 def predict(state: RoomState) -> dict:
     spec = state.spec()
     started = time.perf_counter()
-    prediction = ensemble.predict(spec)
+    prediction = model_for(spec).predict(spec)
     return respond(spec, prediction, time.perf_counter() - started, state.rules())
 
 
@@ -149,6 +193,7 @@ def lowest_safe(base: CaseSpec, rules: Rules) -> tuple[float | None, int]:
     settings = fan_settings(base, rules)
     specs = [CaseSpec(machines=base.machines, ach=ach, room=base.room) for ach in settings]
     tested = 1
+    ensemble = model_for(base)
     if not _within_limit(specs[-1], ensemble.predict(specs[-1]), a):
         return None, tested
     lo, hi = 0, len(specs) - 1  # the answer lies in [lo, hi]; hi passes
@@ -162,11 +207,17 @@ def lowest_safe(base: CaseSpec, rules: Rules) -> tuple[float | None, int]:
     return settings[hi], tested
 
 
+def max_items(spec: CaseSpec) -> int:
+    if spec.room.kind == "cabinet":
+        return 6
+    return 5 if model_for(spec).meta.get("people") else 3
+
+
 def session_for(state: "RoomState", spec: CaseSpec) -> assisting.Session:
     rules = state.rules()
     return assisting.Session(
-        list(spec.machines), spec.ach, spec.room, ensemble, rules.assumptions,
-        lambda base: lowest_safe(base, rules), max_items=5 if ensemble.meta.get("people") else 3,
+        list(spec.machines), spec.ach, spec.room, model_for(spec), rules.assumptions,
+        lambda base: lowest_safe(base, rules), max_items=max_items(spec),
         minimum_ach=rules.minimum_ach, standard=rules.chosen.name,
     )
 
@@ -175,7 +226,7 @@ def session_for(state: "RoomState", spec: CaseSpec) -> assisting.Session:
 def explain(state: RoomState) -> dict:
     """A plain-language account of the current room, written by a language model on AMD GPUs."""
     spec = state.spec()
-    prediction = ensemble.predict(spec)
+    prediction = model_for(spec).predict(spec)
     rules = state.rules()
     best, _ = lowest_safe(spec, rules)
     try:
@@ -230,6 +281,8 @@ def schedule_example() -> dict:
 def schedule(request: ScheduleRequest) -> dict:
     """Read a production plan in plain words and return the day's fan schedule and its energy."""
     spec = request.state.spec()
+    if spec.room.kind != "cleanroom":
+        raise HTTPException(status_code=422, detail="day schedules are for cleanrooms")
     try:
         rules = request.state.rules()
         return scheduling.build(spec, request.plan, rules, lambda base: lowest_safe(base, rules))
@@ -282,7 +335,7 @@ def optimise(state: RoomState) -> dict:
     if SWEEP:
         a = rules.assumptions(base.machines)
         specs = [CaseSpec(machines=base.machines, ach=ach, room=base.room) for ach in settings]
-        passing = [_within_limit(s, p, a) for s, p in zip(specs, ensemble.predict_many(specs))]
+        passing = [_within_limit(s, p, a) for s, p in zip(specs, model_for(base).predict_many(specs))]
         found = next((settings[i] for i, ok in enumerate(passing) if ok), None)
         tested = len(specs)
     else:
@@ -292,7 +345,7 @@ def optimise(state: RoomState) -> dict:
         "feasible": found is not None,
         "tested": tested,
         "seconds": time.perf_counter() - started,
-        "device": ensemble.device.type,
+        "device": model_for(base).device.type,
         "hardware": HARDWARE,
     }
 
@@ -329,7 +382,7 @@ def verify(state: RoomState) -> dict:
     """Run a real OpenFOAM simulation of this room and compare it with the prediction."""
     spec = state.spec()
     rules = state.rules()
-    prediction = ensemble.predict(spec)
+    prediction = model_for(spec).predict(spec)
     predicted = summarise(spec, prediction.fluid, prediction.particles, prediction.age, rules.assumptions(spec.machines))
     job_id = uuid.uuid4().hex[:12]
     jobs[job_id] = {"id": job_id, "status": "queued"}
@@ -360,7 +413,7 @@ def _confirm(job_id: str, base: CaseSpec, rules: Rules) -> None:
         ach = proposed
         for attempt in range(MAX_CONFIRMATIONS):
             spec = CaseSpec(machines=base.machines, ach=ach, room=base.room)
-            p = ensemble.predict(spec)
+            p = model_for(spec).predict(spec)
             predicted = summarise(spec, p.fluid, p.particles, p.age, a)
             job["trail"].append({"ach": ach, "predicted_percent": round(100 * predicted["worst_level"] / a.particle_limit),
                                  "simulated_percent": None, "passed": None})

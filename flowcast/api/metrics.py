@@ -35,6 +35,10 @@ def release_rate(machine, a: Assumptions) -> float:
     """Particles per second an item releases in its current state."""
     if not machine.on:
         return 0.0
+    if machine.kind == "component":  # heat: machine_emission is per watt
+        from .heat import component_power
+
+        return a.machine_emission * component_power(machine) * machine.emission
     usual = a.person_emission if machine.kind == "person" else a.machine_emission
     return usual * machine.emission
 
