@@ -37,6 +37,8 @@ Rules:
 - Two items cannot share floor space, and nothing can be stacked on anything else. If a request is impossible,
   say why and suggest the nearest thing that is possible; do not keep retrying.
 - If a tool returns an error, read it and try something else at most twice. Stop when the request is done.
+- Your last message is shown to the engineer exactly as written. It must contain only the outcome: no reasoning,
+  no checking aloud, no ticks or checklists, no repetition.
 - Finish with a short plain answer (at most 90 words): what you did, the result with its figures, and anything
   the engineer should check. Plain sentences only: no headings, lists, bold or other markup. Reply in the
   language the request was written in."""
