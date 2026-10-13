@@ -32,10 +32,11 @@ VERIFY = Path(os.environ.get("FLOWCAST_VERIFY", "data/verify"))
 ASSUMPTIONS = Assumptions()
 # How far a confirming simulation may differ from the prediction at the worst point
 AGREEMENT_TOLERANCE = 0.3
-# Ensemble disagreement, in log particle level, at which confidence reaches zero. Calibrated
-# on held-out rooms: confidence below 0.6 marks the fifth of rooms where the members disagree
-# most, and those rooms carry about twice the error of the rest.
-SPREAD_AT_ZERO_CONFIDENCE = 0.1
+# Confidence falls to 0.6, the point at which the interface says "low", at the ensemble
+# disagreement (in log particle level) exceeded by the fifth of held-out rooms where the
+# members disagree most. That figure is measured for each set of models and stored beside
+# them in meta.json; this is the value used when it is missing.
+DEFAULT_LOW_CONFIDENCE_SPREAD = 0.04
 
 app = FastAPI(title="Flowcast")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -91,7 +92,8 @@ class RoomState(BaseModel):
 def confidence(spec: CaseSpec, prediction: Prediction) -> float:
     zone = protected_zone(spec, prediction.fluid, ASSUMPTIONS)
     spread = float(prediction.spread[zone].mean()) if zone.any() else 0.0
-    return max(0.0, 1.0 - spread / SPREAD_AT_ZERO_CONFIDENCE)
+    threshold = ensemble.meta.get("low_confidence_spread", DEFAULT_LOW_CONFIDENCE_SPREAD)
+    return max(0.0, 1.0 - 0.4 * spread / threshold)
 
 
 def respond(spec: CaseSpec, prediction: Prediction, seconds: float) -> dict:
