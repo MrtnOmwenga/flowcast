@@ -463,7 +463,7 @@ function render(): void {
         <button id="optimise" ${online && !busy ? "" : "disabled"}>Find the lowest safe setting</button>
         <button class="ghost" id="confirm-fan" ${online && !busy ? "" : "disabled"}>Find it and confirm by simulation</button>
       </div>
-      <p class="muted small">The first asks the model only and takes about a second. The second then checks the answer with real simulations, stepping the fan up until one passes: one to three minutes.${cabinet() ? "" : " Tested on 100 unseen rooms, the model's own answer was confirmed safe 81% of the time."}</p>
+      <p class="muted small">The first asks the model only and takes about a second. The second then checks the answer with real simulations, stepping the fan up until one passes: one to three minutes.${cabinet() ? " Tested on 100 unseen cabinets, the model's own answer was confirmed safe 86% of the time." : " Tested on 100 unseen rooms, the model's own answer was confirmed safe 81% of the time."}</p>
       ${confirmationHtml()}
     </section>
     <section>
