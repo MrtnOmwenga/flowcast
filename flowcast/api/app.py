@@ -1,7 +1,7 @@
 """The Flowcast service: uvicorn flowcast.api.app:app
 
 FLOWCAST_MODELS   directory holding the trained ensemble (default data/models)
-FLOWCAST_MODELS_CEILING, FLOWCAST_MODELS_CABINET   the same for the other room designs
+FLOWCAST_MODELS_CEILING, FLOWCAST_MODELS_CROSS, FLOWCAST_MODELS_CABINET   the same for the other room designs
 FLOWCAST_VERIFY   directory for verification simulations (default data/verify)
 """
 
@@ -51,6 +51,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 MODEL_DIRS = {
     "panels": MODELS,
     "ceiling": Path(os.environ.get("FLOWCAST_MODELS_CEILING", "data/models-ceiling")),
+    "cross": Path(os.environ.get("FLOWCAST_MODELS_CROSS", "data/models-cross")),
     "cabinet": Path(os.environ.get("FLOWCAST_MODELS_CABINET", "data/models-cabinet")),
 }
 ROOM_NAMES = {room: name for name, room in ROOMS.items()}
