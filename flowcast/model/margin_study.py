@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..api.heat import CabinetRules
 from ..api.metrics import Assumptions, fan_power_kw, summarise
 from ..sim.runner import run_case
 from ..sim.spec import CaseSpec
@@ -34,10 +35,11 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     args = parser.parse_args()
 
-    a = Assumptions()
     ensemble = Ensemble(args.models)
     layouts = [c["spec"] for c in load_cases(args.data, "test") if any(m.on for m in c["spec"].machines)][: args.count]
     room = layouts[0].room
+    # A cabinet is held to its components' temperature rating, a cleanroom to the particle limit
+    a = CabinetRules().assumptions(layouts[0].machines) if room.kind == "cabinet" else Assumptions()
     settings = [float(v) for v in np.linspace(*room.ach_range, 137)]
 
     def worst_simulated(index: int, setting: int) -> float:

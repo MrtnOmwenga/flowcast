@@ -49,7 +49,7 @@ def write_case(spec: CaseSpec, case_dir: Path) -> None:
         "system/controlDict": _control(spec),
         "system/fvSchemes": _FV_SCHEMES.replace("@CONVECTION@", _CONVECTION[spec.convection]),
         "system/fvSolution": _FV_SOLUTION,
-        "constant/transportProperties": f"transportModel Newtonian;\nnu {NU_AIR};\n",
+        "constant/transportProperties": f"transportModel Newtonian;\nnu {spec.room.nu or NU_AIR};\n",
         "constant/turbulenceProperties": "simulationType RAS;\nRAS { RASModel kEpsilon; turbulence on; printCoeffs off; }\n",
     }
     files.update({f"0.orig/{name}": text for name, text in _fields(spec).items()})
@@ -81,14 +81,18 @@ def _vec(v) -> str:
 def _block_mesh(spec: CaseSpec) -> str:
     lx, ly, lz = spec.room.size
     nx, ny, nz = spec.room.shape
+    faces = {"z0": "(0 3 2 1)", "z1": "(4 5 6 7)", "y0": "(0 1 5 4)", "y1": "(3 7 6 2)", "x0": "(0 4 7 3)", "x1": "(1 2 6 5)"}
+    solid = "".join(f for wall, f in faces.items() if wall not in spec.room.symmetry_walls)
+    mirrored = "".join(faces[wall] for wall in spec.room.symmetry_walls)
+    sides = f"    sides {{ type symmetry; faces ({mirrored}); }}\n" if mirrored else ""
     return f"""scale 1;
 vertices ((0 0 0)({lx} 0 0)({lx} {ly} 0)(0 {ly} 0)(0 0 {lz})({lx} 0 {lz})({lx} {ly} {lz})(0 {ly} {lz}));
 blocks (hex (0 1 2 3 4 5 6 7) ({nx} {ny} {nz}) simpleGrading (1 1 1));
 boundary
 (
-    walls {{ type wall; faces ((0 3 2 1)(4 5 6 7)(0 1 5 4)(3 7 6 2)(0 4 7 3)(1 2 6 5)); }}
+    walls {{ type wall; faces ({solid}); }}
     equipment {{ type wall; faces (); }}
-);
+{sides});
 """
 
 
@@ -255,7 +259,10 @@ def _fields(spec: CaseSpec) -> dict[str, str]:
     speed = spec.supply_speed
     k = 1.5 * (0.05 * speed) ** 2
     eps = 0.09**0.75 * k**1.5 / 0.07  # mixing length of 7% of a one-metre supply panel
+    if spec.room.inlet_turbulence:
+        k, eps = spec.room.inlet_turbulence
     wall = "type zeroGradient;"
+    sides = "    sides { type symmetry; }\n" if spec.room.symmetry_walls else ""
 
     def fld(dims: str, internal: str, inlet: str, outlet: str, walls: str) -> str:
         return f"""dimensions {dims};
@@ -266,7 +273,7 @@ boundaryField
     outlet {{ {outlet} }}
     walls {{ {walls} }}
     equipment {{ {walls} }}
-}}
+{sides}}}
 """
 
     def scalar(dims: str, value: float, wall_bc: str) -> str:

@@ -110,6 +110,12 @@ class Room:
     inlets: tuple[tuple, ...] = ()
     outlets: tuple[tuple, ...] = ()
     kind: str = "cleanroom"  # which sampler and readouts apply: "cleanroom" or "cabinet"
+    # For reproducing published experiments. Walls named here ("y0", "y1", ...) are symmetry
+    # planes, which makes a thin slab behave as a two-dimensional room. `inlet_turbulence` is
+    # the (k, epsilon) a benchmark prescribes at the supply, and `nu` its air viscosity.
+    symmetry_walls: tuple[str, ...] = ()
+    inlet_turbulence: tuple[float, float] | None = None
+    nu: float | None = None
 
     @property
     def shape(self) -> tuple[int, int, int]:
@@ -203,8 +209,8 @@ class CaseSpec:
             room_data["size"] = tuple(room_data["size"])
         if "supplies" in room_data:
             room_data["supplies"] = tuple(tuple(s) for s in room_data["supplies"])
-        for key in ("extract_y", "extract_walls", "ach_range"):
-            if key in room_data:
+        for key in ("extract_y", "extract_walls", "ach_range", "symmetry_walls", "inlet_turbulence"):
+            if room_data.get(key) is not None:
                 room_data[key] = tuple(room_data[key])
         for key in ("inlets", "outlets"):
             if key in room_data:
