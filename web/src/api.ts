@@ -122,7 +122,7 @@ export const api = {
   explain: (state: RoomState) => post<Explanation>("/api/explain", state),
   health: async (): Promise<Health> => (await fetch(`${BASE}/api/health`)).json(),
   /** A stored simulation, used to start the page before the service answers. */
-  sample: async (): Promise<Payload> => (await fetch("/sample.json")).json(),
+  sample: async (path = "/sample.json"): Promise<Payload> => (await fetch(path)).json(),
   predict: (state: RoomState) => post<Payload>("/api/predict", state),
   lowestSafe: (state: RoomState) => post<Optimum>("/api/optimise", state),
   verify: (state: RoomState) => post<Verification>("/api/verify", state),

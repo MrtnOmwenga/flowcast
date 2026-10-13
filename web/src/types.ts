@@ -46,7 +46,14 @@ export interface RoomInfo {
   extract_height: number;
   extract_walls: string[];
   ach_range?: [number, number];
+  /** Openings as (wall, u, v, su, sv); older payloads give only supplies and extracts. */
+  inlets?: Opening[];
+  outlets?: Opening[];
+  design?: string;
+  kind?: "cleanroom" | "cabinet";
 }
+
+export type Opening = [string, number, number, number, number];
 
 export interface Payload {
   source: "model" | "simulation";
@@ -69,8 +76,11 @@ export interface Payload {
 export interface RoomState {
   machines: Machine[];
   ach: number;
+  room?: string;
   standard?: string;
   minimum_ach?: number;
+  limit?: string;
+  ambient?: number;
 }
 
 export interface StandardInfo {
@@ -79,9 +89,15 @@ export interface StandardInfo {
   source: string;
   in_operation: number;
   at_rest: number;
-  state: "in operation" | "at rest";
+  state: "in operation" | "at rest" | "running" | "idle";
   minimum_ach: number;
   lead_minutes: number;
   cleanup_minutes: number;
-  choices: { id: string; name: string; in_operation: number; at_rest: number }[];
+  choices: { id: string; name: string; in_operation?: number; at_rest?: number; max_air?: number }[];
+  // A cabinet's limit is a temperature rating rather than a cleanliness standard
+  kind?: "heat";
+  ambient?: number;
+  max_air?: number;
+  allowed_rise?: number;
+  components?: { name: string; size: [number, number, number]; power: number }[];
 }

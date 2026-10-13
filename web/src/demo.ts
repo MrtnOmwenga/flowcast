@@ -4,7 +4,7 @@ import { RoomScene, overlaps, type SliceMode } from "./scene";
 import { startTutorial } from "./tutorial";
 import type { Machine, Payload, RoomState } from "./types";
 
-const CATALOGUE: Record<string, [number, number, number]> = {
+const CLEANROOM_ITEMS: Record<string, [number, number, number]> = {
   Workbench: [1.6, 0.8, 1.0],
   Cabinet: [0.8, 0.6, 1.8],
   "Filling machine": [1.2, 1.0, 1.4],
@@ -13,20 +13,74 @@ const CATALOGUE: Record<string, [number, number, number]> = {
   "Shelving rack": [1.2, 0.4, 2.0],
   Cart: [0.8, 0.6, 0.8],
 };
+// Components on a cabinet's mounting plate: length, width, depth out from the plate
+const CABINET_ITEMS: Record<string, [number, number, number]> = {
+  Drive: [0.4, 0.2, 0.25],
+  "Large drive": [0.6, 0.3, 0.3],
+  "Controller rack": [0.15, 0.4, 0.15],
+  "Power supply": [0.2, 0.15, 0.15],
+  Transformer: [0.25, 0.25, 0.25],
+  "Contactor row": [0.1, 0.5, 0.1],
+  "Braking resistor": [0.3, 0.1, 0.1],
+};
 const PERSON: [number, number, number] = [0.4, 0.4, 1.8];
-// Room designs. Each has its own trained models; only the first is wired into the page so far.
-const DESIGNS = [
-  { name: "Ceiling panels", note: "Four supply panels, one return wall", ready: true },
-  { name: "Filter ceiling", note: "Air moves straight down; models trained", ready: false },
-  { name: "Cross-flow", note: "Filter wall to return wall", ready: false },
-];
 const SOON = `<span class="soon">soon</span>`;
 
 // The limits the served models were trained within. Models trained with people allow more.
 const LIMITS = { basic: { items: 3, kinds: ["Workbench", "Cabinet", "Filling machine", "Small unit", "Isolator"] } };
-const TOUR_SEEN = "flowcast-tour-seen";
+
+/** A room design: each has its own trained models. `ach` is the setting it opens at. */
+interface Design { id: string; name: string; note: string; ready: boolean; ach: number }
+interface Profile {
+  kind: "cleanroom" | "cabinet";
+  title: string;
+  designs: Design[];
+  catalogue: Record<string, [number, number, number]>;
+  sample: string;
+  examples: string[];
+  tasks: Task[];
+  sliceHeight: number;
+}
 
 type Task = "explore" | "optimise" | "plan" | "confirm" | "compare";
+const PROFILES: Record<string, Profile> = {
+  cleanroom: {
+    kind: "cleanroom",
+    title: "Cleanroom demo",
+    designs: [
+      { id: "panels", name: "Ceiling panels", note: "Four supply panels, one return wall", ready: true, ach: 20 },
+      { id: "ceiling", name: "Filter ceiling", note: "Air moves straight down, out at both ends", ready: true, ach: 60 },
+      { id: "cross", name: "Cross-flow", note: "Filter wall to return wall", ready: false, ach: 20 },
+    ],
+    catalogue: CLEANROOM_ITEMS,
+    sample: "/sample.json",
+    examples: [
+      "Clear the room and set it up as a small filling suite: an isolator by the far wall, a workbench near the return wall, and two operators at the isolator.",
+      "What is the lowest fan setting I can safely run, and what does it save?",
+      "Move whichever item does the most harm to a better place, then find the lowest safe setting.",
+      "The operators have gone home. What can the fans drop to overnight?",
+    ],
+    tasks: ["explore", "optimise", "plan", "compare", "confirm"],
+    sliceHeight: 1.1,
+  },
+  cabinet: {
+    kind: "cabinet",
+    title: "Control cabinet demo",
+    designs: [
+      { id: "cabinet", name: "Filter fan", note: "In at the bottom, out at the top", ready: true, ach: 625 },
+      { id: "roof", name: "Roof fan", note: "Drawn out through the roof", ready: false, ach: 625 },
+      { id: "side", name: "Side to side", note: "In one side wall, out the other", ready: false, ach: 625 },
+    ],
+    catalogue: CABINET_ITEMS,
+    sample: "/sample-cabinet.json",
+    examples: [],
+    tasks: ["explore", "optimise", "confirm"],
+    sliceHeight: 0.2,
+  },
+};
+let profile = PROFILES.cleanroom;
+const TOUR_SEEN = "flowcast-tour-seen";
+
 const TASKS: { id: Task; name: string; about: string; soon?: boolean }[] = [
   { id: "explore", name: "Explore", about: "Change the room by hand and watch the air respond. Each change is predicted by the model in about a tenth of a second." },
   { id: "optimise", name: "Optimise", about: "Let Flowcast search. The model is run many times to find the best fan setting or the best place for an item." },
@@ -48,7 +102,8 @@ let day: DaySchedule | null = null;
 let planning = false;
 let scene: RoomScene | null = null;
 
-let state: RoomState = { machines: [], ach: 20, standard: "gmp-c", minimum_ach: 10 };
+let state: RoomState = { machines: [], ach: 20, room: "panels", standard: "gmp-c", minimum_ach: 10 };
+let drawnDesign = "";
 let fields: Fields | null = null;
 let payload: Payload | null = null;
 let online = false;
@@ -61,12 +116,6 @@ let conversation: { role: string; content: string }[] = [];
 let answer: AgentAnswer | null = null;
 let asking = false;
 let draft = "";
-const EXAMPLES = [
-  "Clear the room and set it up as a small filling suite: an isolator by the far wall, a workbench near the return wall, and two operators at the isolator.",
-  "What is the lowest fan setting I can safely run, and what does it save?",
-  "Move whichever item does the most harm to a better place, then find the lowest safe setting.",
-  "The operators have gone home. What can the fans drop to overnight?",
-];
 let explanation: Explanation | null = null;
 let explaining = false;
 let languageModel: string | null = null;
@@ -76,8 +125,16 @@ let people = false; // whether the served models were trained on rooms with peop
 let inFlight = false;
 let queued = false;
 
-export function mount(root: HTMLElement): void {
-  if (scene) return;
+export function mount(root: HTMLElement, name = "cleanroom"): void {
+  if (scene) {
+    if (PROFILES[name] !== profile) {
+      profile = PROFILES[name];
+      reset();
+      void start();
+    }
+    return;
+  }
+  profile = PROFILES[name];
   root.innerHTML = `<div id="stage"><div id="view"></div><div id="askbar"></div></div><aside id="panel"></aside>`;
   view = root.querySelector<HTMLElement>("#view")!;
   panel = root.querySelector<HTMLElement>("#panel")!;
@@ -91,6 +148,30 @@ export function mount(root: HTMLElement): void {
     void refresh();
   };
   void start();
+}
+
+/** Forget everything about the previous room when the demo or design changes. */
+function reset(): void {
+  task = "explore";
+  verification = null;
+  confirmation = null;
+  explanation = null;
+  answer = null;
+  conversation = [];
+  day = null;
+  searchNote = "";
+  note = "";
+  positionItem = 0;
+  sliceHeight = profile.sliceHeight;
+}
+
+function setDesign(id: string): void {
+  const design = profile.designs.find((d) => d.id === id);
+  if (!design?.ready || state.room === id) return;
+  reset();
+  state = { ...state, room: id, ach: design.ach, minimum_ach: profile.kind === "cabinet" ? 0 : 10 };
+  render();
+  void refresh();
 }
 
 export function setActive(active: boolean): void {
@@ -127,6 +208,13 @@ function sameLayout(a: Machine[], b: Machine[]): boolean {
 
 function apply(result: Payload, current: boolean): void {
   payload = result;
+  const design = result.room.design ?? "panels";
+  if (design !== drawnDesign) {
+    drawnDesign = design;
+    scene!.setRoom(result.grid.size, result.room, result.grid.cell);
+    scene!.setMachines(state.machines); // placed again now the room's size is known
+    scene!.setSlice(sliceMode, sliceHeight);
+  }
   fields = new Fields(result);
   fields.combine(state.machines);
   scene!.setFields(fields);
@@ -161,11 +249,30 @@ function inOperation(machines: Machine[]): boolean {
 }
 
 function maxItems(): number {
+  if (profile.kind === "cabinet") return 6;
   return people ? 5 : LIMITS.basic.items;
 }
 
 function choices(): string[] {
-  return people ? [...Object.keys(CATALOGUE), "Person"] : LIMITS.basic.kinds;
+  if (profile.kind === "cabinet") return Object.keys(CABINET_ITEMS);
+  return people ? [...Object.keys(CLEANROOM_ITEMS), "Person"] : LIMITS.basic.kinds;
+}
+
+const cabinet = () => profile.kind === "cabinet";
+
+/** Cubic metres of air in the room or cabinet. */
+function volume(): number {
+  const [lx, ly, lz] = fields?.size ?? [6, 4, 3];
+  return lx * ly * lz;
+}
+
+/** A fan setting in the unit people use for it: air changes an hour for a room, airflow for a cabinet. */
+function fanText(ach: number): string {
+  return cabinet() ? `${number(ach * volume())} m³/h` : `${number(ach, 1)} air changes an hour`;
+}
+
+function ambient(): number {
+  return payload?.standard?.ambient ?? state.ambient ?? 35;
 }
 
 function rotate(index: number): void {
@@ -188,11 +295,13 @@ function rotate(index: number): void {
 function addMachine(kind: string): void {
   if (state.machines.length >= maxItems() || !fields) return;
   const person = kind === "Person";
-  const [sx, sy, sz] = person ? PERSON : CATALOGUE[kind];
+  const [sx, sy, sz] = person ? PERSON : profile.catalogue[kind];
   const [lx, ly] = fields.size;
-  for (let x = 0; x <= lx - sx + 1e-6; x += 0.2) {
-    for (let y = 0; y <= ly - sy + 1e-6; y += 0.2) {
-      const machine: Machine = { x: round(x), y: round(y), sx, sy, sz, on: true, emission: 1, kind: person ? "person" : "machine" };
+  const step = fields.cell;
+  // keep clear of a cabinet's inlet, as the simulated layouts do
+  for (let x = cabinet() ? 0.2 : 0; x <= lx - sx + 1e-6; x += step) {
+    for (let y = 0; y <= ly - sy + 1e-6; y += step) {
+      const machine: Machine = { x: round(x), y: round(y), sx, sy, sz, on: true, emission: 1, kind: person ? "person" : cabinet() ? "component" : "machine" };
       if (!state.machines.some((other) => overlaps(machine, other))) {
         state = { ...state, machines: [...state.machines, machine] };
         scene!.setMachines(state.machines);
@@ -214,7 +323,7 @@ function number(value: number, digits = 0): string {
 function render(): void {
   renderAsk();
   if (!fields || !payload) {
-    panel.innerHTML = `<h1>Cleanroom demo</h1><p class="muted">Loading the room…</p>`;
+    panel.innerHTML = `<h1>${profile.title}</h1><p class="muted">Loading…</p>`;
     return;
   }
   const scroll = panel.scrollTop;
@@ -230,45 +339,67 @@ function render(): void {
   const stale = !sameLayout(payload.machines, state.machines);
   const confidence = payload.metrics.confidence;
   const current = TASKS.find((k) => k.id === task)!;
+  const tasks = TASKS.filter((k) => profile.tasks.includes(k.id));
+  const std = payload.standard;
+  const heatRules = std?.kind === "heat";
 
   panel.innerHTML = `
     <div class="title">
-      <h1>Cleanroom demo</h1>
-      <button class="ghost" id="tour">How to use this</button>
+      <h1>${profile.title}</h1>
+      ${cabinet() ? "" : `<button class="ghost" id="tour">How to use this</button>`}
     </div>
     <div class="designs" data-tour="designs">
-      ${DESIGNS.map((d, i) => `<button class="design ${i === 0 ? "active" : ""}" ${d.ready ? "" : "disabled"} title="${d.note}">${d.name}${d.ready ? "" : SOON}<small>${d.note}</small></button>`).join("")}
+      ${profile.designs.map((d) => `<button class="design ${d.id === state.room ? "active" : ""}" data-design="${d.id}" ${d.ready ? "" : "disabled"} title="${d.note}">${d.name}${d.ready ? "" : SOON}<small>${d.note}</small></button>`).join("")}
     </div>
-    ${payload.standard ? `
+    ${std && heatRules ? `
+    <section class="rules" data-tour="rules">
+      <h2>What the cabinet must meet</h2>
+      <div class="rule-row">
+        <label for="limit">Components</label>
+        <select id="limit">${std.choices.map((c) => `<option value="${c.id}" ${c.id === std.id ? "selected" : ""}>${c.name}</option>`).join("")}</select>
+      </div>
+      <div class="rule-row">
+        <label for="ambient">Air drawn in, °C</label>
+        <input id="ambient" type="number" min="15" max="45" step="1" value="${number(ambient())}" />
+      </div>
+      <p class="muted small">The air around every component must stay under <b>${number(std.max_air ?? 0)} °C</b>: a rise of ${number(std.allowed_rise ?? 0)} °C over the air drawn in. ${std.source}.</p>
+    </section>` : ""}
+    ${std && !heatRules ? `
     <section class="rules" data-tour="rules">
       <h2>What the room must meet</h2>
       <div class="rule-row">
         <label for="standard">Standard</label>
-        <select id="standard">${payload.standard.choices.map((c) => `<option value="${c.id}" ${c.id === payload!.standard!.id ? "selected" : ""}>${c.name}</option>`).join("")}</select>
+        <select id="standard">${std!.choices.map((c) => `<option value="${c.id}" ${c.id === std!.id ? "selected" : ""}>${c.name}</option>`).join("")}</select>
       </div>
       <div class="rule-row">
         <label for="minimum">Site minimum fan setting</label>
-        <input id="minimum" type="number" min="${payload.room.ach_range?.[0] ?? 6}" max="30" step="1" value="${state.minimum_ach ?? 10}" />
+        <input id="minimum" type="number" min="${payload.room.ach_range?.[0] ?? 6}" max="${payload.room.ach_range?.[1] ?? 40}" step="1" value="${Math.max(state.minimum_ach ?? 10, payload.room.ach_range?.[0] ?? 6)}" />
       </div>
-      <p class="muted small">Limit ${payload.standard.state}: <b>${number(a.particle_limit)}</b> per m³. In operation ${number(payload.standard.in_operation)}, at rest ${number(payload.standard.at_rest)} (${payload.standard.source}).</p>
+      <p class="muted small">Limit ${std!.state}: <b>${number(a.particle_limit)}</b> per m³. In operation ${number(std!.in_operation)}, at rest ${number(std!.at_rest)} (${std!.source}).</p>
     </section>` : ""}
     ${online ? "" : `<p class="warn">Showing one stored simulation. The prediction service is not connected.</p>`}
     ${note ? `<p class="warn">${escape(note)}</p>` : ""}
 
     <section class="readouts" data-tour="readouts">
-      <h2>The room now</h2>
-      <div class="status ${verdict}">${verdict === "ok" ? "Within the limit" : verdict === "close" ? "Too close to the limit to call: verify" : "Over the limit"}${payload.standard ? `, ${payload.standard.state}` : ""}${stale ? " (updating…)" : ""}</div>
+      <h2>${cabinet() ? "The cabinet now" : "The room now"}</h2>
+      <div class="status ${verdict}">${verdict === "ok" ? "Within the limit" : verdict === "close" ? "Too close to the limit to call: verify" : "Over the limit"}${std && !heatRules ? `, ${std.state}` : ""}${stale ? " (updating…)" : ""}</div>
       <div class="meter"><div class="fill ${verdict}" style="width:${bar}%"></div><div class="tick"></div></div>
       <dl class="grid">
-        <div><dt>Worst point</dt><dd>${number(ratio * 100)}% <small>of the limit</small></dd></div>
+        ${cabinet()
+          ? `<div><dt>Hottest air</dt><dd>${number(ambient() + worst.level, 1)} °C <small>${number(ratio * 100)}% of the allowed rise</small></dd></div>
+        <div><dt>Fan airflow</dt><dd>${number(state.ach * volume())} <small>m³/h</small></dd></div>
+        <div><dt>Fan power</dt><dd>${number(power * 1000)} W</dd></div>
+        <div><dt>${saving >= 0 ? "Below full speed" : "Above full speed"}</dt><dd>${number((Math.abs(saving) / a.full_fan_power_kw) * 100)}% <small>less power, dust and noise</small></dd></div>
+        <div><dt>Heat given off</dt><dd>${number(state.machines.filter((m) => m.on).reduce((sum, m) => sum + (fields!.powerOf(m)), 0))} W</dd></div>`
+          : `<div><dt>Worst point</dt><dd>${number(ratio * 100)}% <small>of the limit</small></dd></div>
         <div><dt>Fan setting</dt><dd>${number(state.ach, 1)} <small>air changes an hour</small></dd></div>
         <div><dt>Fan power</dt><dd>${number(power, 2)} kW</dd></div>
         <div><dt>${saving >= 0 ? "Saving" : "Extra cost"}</dt><dd>${number((Math.abs(saving) / a.full_fan_power_kw) * 100)}% <small>$${number(Math.abs(saving) * a.hours_per_year * a.electricity_price)} a year</small></dd></div>
-        <div><dt>Stagnant air</dt><dd>${number(payload.metrics.stagnant_fraction * 100, 1)}% <small>of the room</small></dd></div>
+        <div><dt>Stagnant air</dt><dd>${number(payload.metrics.stagnant_fraction * 100, 1)}% <small>of the room</small></dd></div>`}
         ${confidence === undefined ? "" : `<div><dt>Model confidence</dt><dd class="${confidence < 0.6 ? "amber" : ""}">${confidence < 0.6 ? "Low" : "Good"}</dd></div>`}
       </dl>
       ${confidence !== undefined && confidence < 0.6 ? `<p class="muted small">The models disagree about this layout. Confirm it by simulation before relying on it.</p>` : ""}
-      ${languageModel ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button>
+      ${languageModel && !cabinet() ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button>
 </div>` : ""}
       ${explanation ? `<div class="explanation">${explanation.text.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute">${escape(explanation.model)} on ${escape(explanation.hosted_on)}</p></div>` : ""}
       <p class="compute">${payload.source !== "model" || !payload.compute ? "OpenFOAM simulation" : `${payload.compute.models} models on ${payload.compute.hardware} · ${number(payload.compute.seconds * 1000)} ms`}</p>
@@ -277,39 +408,40 @@ function render(): void {
     <div class="task-picker" data-tour="tasks">
       <label for="task">What do you want to do?</label>
       <select id="task">
-        ${TASKS.map((k) => `<option value="${k.id}" ${k.id === task ? "selected" : ""}>${k.name}${k.soon ? " (soon)" : ""}</option>`).join("")}
+        ${tasks.map((k) => `<option value="${k.id}" ${k.id === task ? "selected" : ""}>${k.name}${k.soon ? " (soon)" : ""}</option>`).join("")}
       </select>
     </div>
     <p class="muted small about">${current.soon ? `${SOON} ` : ""}${current.about}</p>
 
     ${task === "explore" ? `
     <section data-tour="fan">
-      <label>Fan setting <b>${number(state.ach, 1)}</b> air changes an hour</label>
-      <input id="ach" type="range" min="${low}" max="${high}" step="0.5" value="${state.ach}" />
-      <p class="muted small">The room runs at ${number(a.full_ach)} today. Less air costs far less to move, but particles build up.</p>
+      <label>Fan setting <b>${fanText(state.ach)}</b></label>
+      <input id="ach" type="range" min="${low}" max="${high}" step="${cabinet() ? 12.5 : 0.5}" value="${state.ach}" />
+      <p class="muted small">${cabinet()
+        ? `The fan's top setting is ${fanText(a.full_ach)}. Less air means less power, less dust drawn through the filter and less noise, but the components run hotter.`
+        : `The room runs at ${number(a.full_ach)} today. Less air costs far less to move, but particles build up.`}</p>
     </section>
 
     <section data-tour="equipment">
-      <h2>What is in the room</h2>
-      <p class="muted small">Drag an item in the picture to move it.</p>
+      <h2>${cabinet() ? "On the mounting plate" : "What is in the room"}</h2>
+      <p class="muted small">${cabinet() ? "The cabinet is drawn lying on its back: air comes in at the bottom (left, blue) and leaves at the top (right, grey). Drag a component to move it." : "Drag an item in the picture to move it."}</p>
       ${state.machines.map((m, i) => `
         <div class="machine">
-          <label><input type="checkbox" data-toggle="${i}" ${m.on ? "checked" : ""}/> ${nameOf(m)} <small>${m.kind === "person" ? (m.on ? "present" : "away") : m.on ? "running" : "off"}</small></label>
+          <label><input type="checkbox" data-toggle="${i}" ${m.on ? "checked" : ""}/> ${nameOf(m)} <small>${m.kind === "person" ? (m.on ? "present" : "away") : m.kind === "component" ? (m.on ? `${number(fields!.powerOf(m))} W` : "off") : m.on ? "running" : "off"}</small></label>
           <span>${m.sx === m.sy ? "" : `<button class="link" data-rotate="${i}">turn</button> `}<button class="link" data-remove="${i}">remove</button></span>
         </div>`).join("") || `<p class="muted small">The room is empty.</p>`}
-      ${state.machines.length < maxItems() ? `<select id="add"><option value="">Add ${people ? "equipment or a person" : "equipment"}…</option>${choices().map((k) => `<option>${k}</option>`).join("")}</select>` : `<p class="muted small">The model was trained on rooms with up to ${maxItems()} items.</p>`}
+      ${state.machines.length < maxItems() ? `<select id="add"><option value="">Add ${cabinet() ? "a component" : people ? "equipment or a person" : "equipment"}…</option>${choices().map((k) => `<option>${k}</option>`).join("")}</select>` : `<p class="muted small">The model was trained on rooms with up to ${maxItems()} items.</p>`}
       <div class="row"><button class="ghost" disabled>Import an item from a datasheet</button>${SOON}</div>
     </section>
 
     <section data-tour="view">
       <h2>What the picture shows</h2>
       <div class="row">
-        ${(["particles", "age", "off"] as SliceMode[]).map((m) => `<button class="chip ${sliceMode === m ? "active" : ""}" data-slice="${m}">${m === "particles" ? "Particle level" : m === "age" ? "Stagnant air" : "No slice"}</button>`).join("")}
-        <button class="chip" disabled title="Comes with the control cabinet demo">Air temperature</button>
+        ${(["particles", "age", "off"] as SliceMode[]).map((m) => `<button class="chip ${sliceMode === m ? "active" : ""}" data-slice="${m}">${m === "particles" ? (cabinet() ? "Air temperature" : "Particle level") : m === "age" ? "Stagnant air" : "No slice"}</button>`).join("")}
       </div>
-      <label>Slice height <b>${number(sliceHeight, 1)}</b> m</label>
-      <input id="height" type="range" min="0.1" max="${fields.size[2] - 0.1}" step="0.2" value="${sliceHeight}" />
-      <p class="muted small">The red marker is the worst point: the place for a particle counter.</p>
+      <label>${cabinet() ? "Slice distance from the plate" : "Slice height"} <b>${number(sliceHeight, 2)}</b> m</label>
+      <input id="height" type="range" min="${fields.cell / 2}" max="${fields.size[2] - fields.cell / 2}" step="${fields.cell}" value="${sliceHeight}" />
+      <p class="muted small">${cabinet() ? "The red marker is the hottest air away from the component surfaces: the place for a temperature sensor." : "The red marker is the worst point: the place for a particle counter."}</p>
     </section>` : ""}
 
     ${task === "optimise" ? `
@@ -320,12 +452,12 @@ function render(): void {
         <button id="optimise" ${online && !busy ? "" : "disabled"}>Find the lowest safe setting</button>
         <button class="ghost" id="confirm-fan" ${online && !busy ? "" : "disabled"}>Find it and confirm by simulation</button>
       </div>
-      <p class="muted small">The first asks the model only and takes about a second. The second then checks the answer with real simulations, stepping the fan up until one passes: one to three minutes. Tested on 100 unseen rooms, the model's own answer was confirmed safe 81% of the time.</p>
+      <p class="muted small">The first asks the model only and takes about a second. The second then checks the answer with real simulations, stepping the fan up until one passes: one to three minutes.${cabinet() ? "" : " Tested on 100 unseen rooms, the model's own answer was confirmed safe 81% of the time."}</p>
       ${confirmationHtml()}
     </section>
     <section>
       <h2>Where an item stands</h2>
-      <p class="muted small">Tries one item at positions across the whole floor and moves it to where the worst point is lowest.</p>
+      <p class="muted small">Tries one item at positions across the whole ${cabinet() ? "plate" : "floor"} and moves it to where the worst point is lowest.</p>
       ${state.machines.length ? `
       <select id="position-item">${state.machines.map((m, i) => `<option value="${i}" ${i === positionItem ? "selected" : ""}>${i + 1}. ${nameOf(m)}</option>`).join("")}</select>
       <label class="check"><input type="checkbox" id="position-fan" ${positionThenFan ? "checked" : ""}/> then find the lowest safe fan setting</label>
@@ -377,7 +509,7 @@ function render(): void {
 
     <details>
       <summary>Assumptions</summary>
-      <p class="muted small">A running machine releases ${number(a.machine_emission)} particles a second${people ? ` and a person ${number(a.person_emission)}` : ""}. The limit is ISO class 7 (${number(a.particle_limit)} per m³), applied at the worst point up to ${number(a.occupied_height, 1)} m, which is ${number(worst.level)} per m³ now. The room runs at ${number(a.full_ach)} air changes an hour today, using ${number(a.full_fan_power_kw, 1)} kW of fan power. Power follows the cube of airflow, with ${number(a.fan_fixed_loss * 100)}% that does not fall as the fans slow. Electricity at $${number(a.electricity_price, 2)} per kWh.</p>
+      ${cabinet() ? `<p class="muted small">Each component gives off its typical loss at full load: ${(std?.components ?? []).map((c) => `${c.name} ${number(c.power)} W`).join(", ")}. The fan moves heat far faster than it rises, so rising warm air is left out, which is fair for a fan-cooled cabinet and not for one cooled by natural draught. The limit applies to the air at least one cell (5 cm) from every component. The fan uses ${number(a.full_fan_power_kw * 1000)} W at ${fanText(a.full_ach)}; power follows the cube of airflow, with ${number(a.fan_fixed_loss * 100)}% that does not fall.</p>` : `<p class="muted small">A running machine releases ${number(a.machine_emission)} particles a second${people ? ` and a person ${number(a.person_emission)}` : ""}. The limit is ISO class 7 (${number(a.particle_limit)} per m³), applied at the worst point up to ${number(a.occupied_height, 1)} m, which is ${number(worst.level)} per m³ now. The room runs at ${number(a.full_ach)} air changes an hour today, using ${number(a.full_fan_power_kw, 1)} kW of fan power. Power follows the cube of airflow, with ${number(a.fan_fixed_loss * 100)}% that does not fall as the fans slow. Electricity at $${number(a.electricity_price, 2)} per kWh.</p>`}
     </details>
   `;
   panel.scrollTop = scroll;
@@ -386,7 +518,7 @@ function render(): void {
 
 /** The request box under the picture. Drawn apart from the panel so typing is never interrupted. */
 function renderAsk(): void {
-  if (!languageModel) {
+  if (!languageModel || profile.examples.length === 0) {
     askBar.innerHTML = "";
     askBar.hidden = true;
     return;
@@ -400,7 +532,7 @@ function renderAsk(): void {
       </div>` : ""}
     <div class="ask-box" data-tour="ask">
       <textarea id="question" rows="2" placeholder="Ask Flowcast: describe what you want to do with this room" ${asking ? "disabled" : ""}>${escape(draft)}</textarea>
-      <div class="ask-suggestions">${EXAMPLES.map((e, i) => `<button class="suggestion" data-example="${i}" ${asking ? "disabled" : ""}>${escape(e)}</button>`).join("")}</div>
+      <div class="ask-suggestions">${profile.examples.map((e, i) => `<button class="suggestion" data-example="${i}" ${asking ? "disabled" : ""}>${escape(e)}</button>`).join("")}</div>
       <div class="ask-foot">
         <span class="muted small">A language model served on AMD GPUs plans the steps. Every figure comes from the airflow model.</span>
         <button id="ask" ${online && !asking ? "" : "disabled"}>${asking ? "Working…" : "Ask"}</button>
@@ -416,7 +548,7 @@ function renderAsk(): void {
   });
   askBar.querySelector<HTMLButtonElement>("#ask")!.addEventListener("click", () => void ask(question.value));
   askBar.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((button) =>
-    button.addEventListener("click", () => void ask(EXAMPLES[Number(button.dataset.example)])),
+    button.addEventListener("click", () => void ask(profile.examples[Number(button.dataset.example)])),
   );
 }
 
@@ -547,14 +679,14 @@ function confirmationHtml(): string {
     const outcome = step.simulated_percent === null
       ? "simulating…"
       : `simulation ${step.simulated_percent}% of the limit: ${step.passed ? "passes" : "too high"}`;
-    return `<li><b>${number(step.ach, 1)} air changes</b><small>model ${step.predicted_percent}% of the limit, ${outcome}</small></li>`;
+    return `<li><b>${fanText(step.ach)}</b><small>model ${step.predicted_percent}% of the limit, ${outcome}</small></li>`;
   }).join("");
   const done = c.status === "done";
   const verdict = c.status === "failed" ? `<div class="status bad">The simulation failed.</div>`
     : !done ? ""
-    : c.confirmed ? `<div class="status ok">Confirmed by simulation at ${number(c.ach ?? 0, 1)} air changes an hour</div>`
+    : c.confirmed ? `<div class="status ok">Confirmed by simulation at ${fanText(c.ach ?? 0)}</div>`
     : `<div class="status bad">${escape(c.note ?? "Not confirmed.")}</div>`;
-  return `<ol class="steps">${lines}</ol>${verdict}${done && c.confirmed && c.model_ach !== c.ach ? `<p class="muted small">The model first proposed ${number(c.model_ach ?? 0, 1)}; the simulation moved it up.</p>` : ""}`;
+  return `<ol class="steps">${lines}</ol>${verdict}${done && c.confirmed && c.model_ach !== c.ach ? `<p class="muted small">The model first proposed ${fanText(c.model_ach ?? 0)}; the simulation moved it up.</p>` : ""}`;
 }
 
 async function confirmFan(): Promise<void> {
@@ -596,10 +728,10 @@ function verificationHtml(): string {
 
 function nameOf(m: Machine): string {
   if (m.kind === "person") return "Person";
-  for (const [name, [sx, sy, sz]] of Object.entries(CATALOGUE)) {
+  for (const [name, [sx, sy, sz]] of Object.entries(profile.catalogue)) {
     if (sz === m.sz && ((sx === m.sx && sy === m.sy) || (sx === m.sy && sy === m.sx))) return name;
   }
-  return "Machine";
+  return cabinet() ? "Component" : "Machine";
 }
 
 function bind(): void {
@@ -669,9 +801,23 @@ function bind(): void {
   });
   const minimum = panel.querySelector<HTMLInputElement>("#minimum");
   minimum?.addEventListener("change", () => {
-    const value = Math.min(30, Math.max(payload?.room.ach_range?.[0] ?? 6, Number(minimum.value) || 0));
+    const [low, high] = payload?.room.ach_range ?? [6, 40];
+    const value = Math.min(high, Math.max(low, Number(minimum.value) || 0));
     state = { ...state, minimum_ach: value, ach: Math.max(state.ach, value) };
     day = null;
+    changed(true);
+  });
+  panel.querySelectorAll<HTMLButtonElement>("[data-design]").forEach((button) =>
+    button.addEventListener("click", () => setDesign(button.dataset.design!)),
+  );
+  const limit = panel.querySelector<HTMLSelectElement>("#limit");
+  limit?.addEventListener("change", () => {
+    state = { ...state, limit: limit.value };
+    changed(true);
+  });
+  const air = panel.querySelector<HTMLInputElement>("#ambient");
+  air?.addEventListener("change", () => {
+    state = { ...state, ambient: Math.min(45, Math.max(15, Number(air.value) || 35)) };
     changed(true);
   });
   const picker = panel.querySelector<HTMLSelectElement>("#task");
@@ -703,7 +849,7 @@ async function findPosition(): Promise<void> {
     scene!.setMachines(state.machines);
     verification = null;
     explanation = null;
-    const fan = result.fan?.found ? ` The lowest safe fan setting is now ${number(result.fan.lowest_safe_fan_setting ?? 0, 1)} air changes an hour.` : result.fan ? " No fan setting in range is safe for this layout." : "";
+    const fan = result.fan?.found ? ` The lowest safe fan setting is now ${fanText(result.fan.lowest_safe_fan_setting ?? 0)}.` : result.fan ? " No fan setting in range is safe for this layout." : "";
     searchNote = `Tried the ${result.item} at ${result.positions_tried} positions in ${number(result.seconds, 1)} s on ${result.hardware}. At the same fan setting the worst point went from ${result.before_percent}% of the limit to ${result.after_percent}%; the worst position tried gave ${result.worst_tried_percent}%.${fan}`;
     void refresh();
   } catch (error) {
@@ -721,8 +867,8 @@ async function optimise(): Promise<void> {
     const best = await api.lowestSafe(state);
     busy = "";
     searchNote = best.feasible
-      ? `Lowest safe setting: ${number(best.ach, 1)} air changes an hour. ${number(best.tested)} settings tested in ${number(best.seconds, 2)} s on ${best.hardware}.`
-      : `No setting up to ${fanRange()[1]} air changes an hour keeps this layout within the limit.`;
+      ? `Lowest safe setting: ${fanText(best.ach)}. ${number(best.tested)} settings tested in ${number(best.seconds, 2)} s on ${best.hardware}.`
+      : `No setting up to ${fanText(fanRange()[1])} keeps this layout within the limit.`;
     state = { ...state, ach: best.ach };
     render();
     void refresh();
@@ -751,12 +897,18 @@ async function verify(): Promise<void> {
 }
 
 async function start(): Promise<void> {
+  payload = null;
+  fields = null;
+  online = false;
   render();
-  const sample = await api.sample();
-  state = { ...state, machines: sample.machines, ach: Math.max(sample.metrics.ach, state.minimum_ach ?? 0) };
-  scene!.setRoom(sample.grid.size, sample.room);
+  const sample = await api.sample(profile.sample);
+  const design = sample.room.design ?? profile.designs[0].id;
+  state = cabinet()
+    ? { machines: sample.machines, ach: sample.metrics.ach, room: design, minimum_ach: 0, limit: sample.standard?.id, ambient: sample.standard?.ambient }
+    : { machines: sample.machines, ach: Math.max(sample.metrics.ach, 10), room: design, standard: "gmp-c", minimum_ach: 10 };
+  sliceHeight = profile.sliceHeight;
+  drawnDesign = "";
   scene!.setMachines(state.machines);
-  scene!.setSlice(sliceMode, sliceHeight);
   apply(sample, true);
   try {
     const health = await api.health();
@@ -768,7 +920,7 @@ async function start(): Promise<void> {
     online = false;
   }
   render();
-  if (!localStorage.getItem(TOUR_SEEN)) {
+  if (!cabinet() && !localStorage.getItem(TOUR_SEEN)) {
     localStorage.setItem(TOUR_SEEN, "1");
     tour();
   }

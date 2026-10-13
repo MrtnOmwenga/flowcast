@@ -15,7 +15,10 @@ demoRoot.id = "demo";
 demoRoot.hidden = true;
 main.append(page, demoRoot);
 
-const DEMOS = [{ route: "#/demos/cleanroom", name: "Cleanroom", note: "Particle control in a small cleanroom" }];
+const DEMOS = [
+  { route: "#/demos/cleanroom", name: "Cleanroom", note: "Particle control in a small cleanroom" },
+  { route: "#/demos/cabinet", name: "Control cabinet", note: "Component temperatures in a fan-cooled cabinet" },
+];
 let demo: Demo | null = null;
 
 header.innerHTML = `
@@ -25,7 +28,6 @@ header.innerHTML = `
       <button class="navlink" id="demos-button" aria-haspopup="true" aria-expanded="false">Demos <span class="caret">▾</span></button>
       <div class="dropdown" id="demos-menu" hidden>
         ${DEMOS.map((d) => `<a href="${d.route}"><b>${d.name}</b><small>${d.note}</small></a>`).join("")}
-        <span class="soon"><b>Control cabinet</b><small>Planned next</small></span>
       </div>
     </div>
     <a class="navlink" href="#/architecture">Architecture</a>
@@ -61,7 +63,7 @@ async function route(): Promise<void> {
   });
   if (isDemo) {
     demo ??= await import("./demo");
-    demo.mount(demoRoot);
+    demo.mount(demoRoot, hash.startsWith("#/demos/cabinet") ? "cabinet" : "cleanroom");
     demo.setActive(true);
     return;
   }

@@ -105,6 +105,6 @@ class CabinetRules:
             "allowed_rise": chosen.max_air - self.ambient,
             "state": "running" if self.in_operation(machines) else "idle",
             "minimum_ach": self.minimum_ach, "lead_minutes": 0, "cleanup_minutes": 0,
-            "components": {name: power for name, (_, power) in COMPONENTS.items()},
+            "components": [{"name": name, "size": list(size), "power": power} for name, (size, power) in COMPONENTS.items()],
             "choices": [{"id": key, "name": c.name, "max_air": c.max_air} for key, c in LIMITS.items()],
         }

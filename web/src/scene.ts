@@ -2,11 +2,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Fields } from "./field";
 import { buildItem, lampColour, type ItemModel } from "./models";
-import type { Machine, RoomInfo } from "./types";
+import type { Machine, Opening, RoomInfo } from "./types";
 
 export type SliceMode = "particles" | "age" | "off";
 
-const SNAP = 0.2;
 const TRACERS = 7000;
 // A white room: tracer and marker colours are chosen to read against light surfaces.
 const CLEAN = new THREE.Color(0x1f7ae0);
@@ -37,7 +36,10 @@ export class RoomScene {
   private tracerSim = new Float32Array(TRACERS * 3);
   private tracerAge = new Float32Array(TRACERS);
   private tracers: THREE.Points;
-  private supplies: RoomInfo["supplies"] = [];
+  private inlets: Opening[] = [];
+  private snapStep = 0.2;
+  /** Colour the level on a straight scale up to the limit (heat) rather than over decades (particles). */
+  private linear = false;
 
   private slice: THREE.Mesh;
   private sliceTexture: THREE.DataTexture | null = null;
@@ -118,11 +120,22 @@ export class RoomScene {
     return out.set(x - this.size[0] / 2, z, y - this.size[1] / 2);
   }
 
-  setRoom(size: [number, number, number], room: RoomInfo): void {
+  setRoom(size: [number, number, number], room: RoomInfo, cell = 0.2): void {
     this.size = size;
-    this.supplies = room.supplies;
+    this.snapStep = cell;
+    this.linear = room.kind === "cabinet";
+    this.inlets = room.inlets ?? room.supplies.map(([x, y, sx, sy]) => ["z1", x, y, sx, sy] as Opening);
+    const outlets = room.outlets ?? room.extract_walls.map((w) => [w, room.extract_y[0], 0, room.extract_y[1] - room.extract_y[0], room.extract_height] as Opening);
     this.roomGroup.clear();
     const [lx, ly, lz] = size;
+    // Frame the room whatever its size: the cleanroom is 6 m long, the cabinet 2 m.
+    const scale = Math.max(lx, ly, lz) / 6;
+    this.camera.position.set(6.5 * scale, 5.5 * scale, 7.5 * scale);
+    this.controls.minDistance = 3 * scale;
+    this.controls.maxDistance = 22 * scale;
+    (this.tracers.material as THREE.PointsMaterial).size = 0.05 * Math.max(scale, 0.4);
+    this.speedUp = room.kind === "cabinet" ? 0.6 : 6;
+    this.marker.scale.setScalar(Math.max(scale, 0.25));
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(lx, ly),
@@ -138,7 +151,7 @@ export class RoomScene {
     );
     shell.position.y = lz / 2 + 0.001;
     this.roomGroup.add(shell);
-    const grid = new THREE.GridHelper(Math.max(lx, ly), Math.max(lx, ly) / 0.5, 0xb9c2cf, 0xcdd4de);
+    const grid = new THREE.GridHelper(Math.max(lx, ly), Math.max(lx, ly) / (scale < 1 ? 0.1 : 0.5), 0xb9c2cf, 0xcdd4de);
     grid.position.y = 0.004;
     grid.scale.set(lx / Math.max(lx, ly), 1, ly / Math.max(lx, ly));
     this.roomGroup.add(grid);
@@ -151,24 +164,32 @@ export class RoomScene {
     this.roomGroup.add(box);
 
     const supplyMaterial = new THREE.MeshBasicMaterial({ color: 0x1f7ae0, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
-    for (const [x, y, sx, sy] of room.supplies) {
-      const panel = new THREE.Mesh(new THREE.PlaneGeometry(sx, sy), supplyMaterial);
-      panel.rotation.x = Math.PI / 2;
-      this.toWorld(x + sx / 2, y + sy / 2, lz - 0.02, panel.position);
-      this.roomGroup.add(panel);
-    }
     const extractMaterial = new THREE.MeshBasicMaterial({ color: 0x5f6b7d, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
-    const [y0, y1] = room.extract_y;
-    const walls: [string, number][] = [["x0", 0.02], ["x1", lx - 0.02]];
-    for (const [name, x] of walls) {
-      if (!room.extract_walls.includes(name)) continue;
-      const vent = new THREE.Mesh(new THREE.PlaneGeometry(y1 - y0, room.extract_height), extractMaterial);
-      vent.rotation.y = Math.PI / 2;
-      this.toWorld(x, (y0 + y1) / 2, room.extract_height / 2, vent.position);
-      this.roomGroup.add(vent);
-    }
+    for (const opening of this.inlets) this.roomGroup.add(this.openingMesh(opening, supplyMaterial));
+    for (const opening of outlets) this.roomGroup.add(this.openingMesh(opening, extractMaterial));
     this.slice.scale.set(lx, ly, 1);
     this.controls.target.set(0, lz * 0.35, 0);
+  }
+
+  /** A flat rectangle on a wall, just inside the room. */
+  private openingMesh([wall, u, v, su, sv]: Opening, material: THREE.Material): THREE.Mesh {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(su, sv), material);
+    const [x, y, z] = this.openingPoint([wall, u, v, su, sv], 0.5, 0.5, 0.01);
+    this.toWorld(x, y, z, mesh.position);
+    if (wall[0] === "x") mesh.rotation.y = Math.PI / 2;
+    if (wall[0] === "z") mesh.rotation.x = Math.PI / 2;
+    return mesh;
+  }
+
+  /** A point on an opening at fractions (a, b) across it, `inset` metres into the room. */
+  private openingPoint([wall, u, v, su, sv]: Opening, a: number, b: number, inset: number): [number, number, number] {
+    const axis = "xyz".indexOf(wall[0]);
+    const point: [number, number, number] = [0, 0, 0];
+    point[axis] = wall[1] === "0" ? inset : this.size[axis] - inset;
+    const [first, second] = [0, 1, 2].filter((k) => k !== axis);
+    point[first] = u + a * su;
+    point[second] = v + b * sv;
+    return point;
   }
 
   setMachines(machines: Machine[]): void {
@@ -250,7 +271,7 @@ export class RoomScene {
         let t: number;
         if (this.sliceMode === "particles") {
           // Two decades below the limit to half a decade above it
-          t = (Math.log10(Math.max(fields.level[i], 1) / limit) + 2) / 2.5;
+          t = this.levelScale(fields.level[i], limit);
         } else {
           t = fields.age[i] / ideal / (stale * 1.25);
         }
@@ -270,7 +291,7 @@ export class RoomScene {
     if (!fields) return;
     const [lx, ly, lz] = this.size;
     let x = 0, y = 0, z = 0;
-    if (anywhere || this.supplies.length === 0 || Math.random() < 0.15) {
+    if (anywhere || this.inlets.length === 0 || Math.random() < 0.15) {
       for (let attempt = 0; attempt < 20; attempt++) {
         x = Math.random() * lx;
         y = Math.random() * ly;
@@ -278,10 +299,8 @@ export class RoomScene {
         if (fields.isAir(x, y, z)) break;
       }
     } else {
-      const [sx0, sy0, sw, sh] = this.supplies[Math.floor(Math.random() * this.supplies.length)];
-      x = sx0 + Math.random() * sw;
-      y = sy0 + Math.random() * sh;
-      z = lz - 0.02 - Math.random() * 0.2;
+      const opening = this.inlets[Math.floor(Math.random() * this.inlets.length)];
+      [x, y, z] = this.openingPoint(opening, Math.random(), Math.random(), (0.02 + Math.random() * 0.2) * (lz / 3));
     }
     this.tracerSim.set([x, y, z], i * 3);
     this.tracerAge[i] = anywhere ? Math.random() * 40 : 0;
@@ -316,7 +335,7 @@ export class RoomScene {
       this.tracerPositions[o] = world.x;
       this.tracerPositions[o + 1] = world.y;
       this.tracerPositions[o + 2] = world.z;
-      const t = (Math.log10(Math.max(fields.level[fields.cellAt(x, y, z)], 1) / limit) + 2) / 2.5;
+      const t = this.levelScale(fields.level[fields.cellAt(x, y, z)], limit);
       color.lerpColors(CLEAN, DIRTY, Math.min(1, Math.max(0, t)));
       this.tracerColors[o] = color.r;
       this.tracerColors[o + 1] = color.g;
@@ -324,6 +343,11 @@ export class RoomScene {
     }
     this.tracers.geometry.attributes.position.needsUpdate = true;
     this.tracers.geometry.attributes.color.needsUpdate = true;
+  }
+
+  /** 0 to 1 for colouring: particles from two decades below the limit to half a decade above; heat straight up to a quarter past the limit. */
+  private levelScale(level: number, limit: number): number {
+    return this.linear ? level / (limit * 1.25) : (Math.log10(Math.max(level, 1) / limit) + 2) / 2.5;
   }
 
   private setPointer(event: PointerEvent): void {
@@ -360,6 +384,7 @@ export class RoomScene {
     const point = this.floorPoint();
     if (!point) return;
     const m = this.machines[this.dragging.index];
+    const snap = (value: number) => Math.round(Math.round(value / this.snapStep) * this.snapStep * 1000) / 1000;
     const x = clamp(snap(point.x - this.dragging.dx), 0, snap(this.size[0] - m.sx));
     const y = clamp(snap(point.y - this.dragging.dy), 0, snap(this.size[1] - m.sy));
     if (x === m.x && y === m.y) return;
@@ -392,10 +417,6 @@ export class RoomScene {
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
-}
-
-function snap(value: number): number {
-  return Math.round(Math.round(value / SNAP) * SNAP * 1000) / 1000;
 }
 
 function clamp(value: number, lo: number, hi: number): number {

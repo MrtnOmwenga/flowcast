@@ -46,6 +46,8 @@ class Rules:
     minimum_ach: float = 10.0
     lead_minutes: int = 20
     cleanup_minutes: int = CLEAN_UP_GUIDANCE_MINUTES
+    # The room design's own figures: how it runs today and what its fans draw
+    base: Assumptions = Assumptions()
 
     @property
     def chosen(self) -> Standard:
@@ -55,7 +57,8 @@ class Rules:
         """A room is in operation while anything is running or anyone is in it."""
         return any(m.on for m in machines)
 
-    def assumptions(self, machines: tuple[Machine, ...] | list[Machine], base: Assumptions = Assumptions()) -> Assumptions:
+    def assumptions(self, machines: tuple[Machine, ...] | list[Machine], base: Assumptions | None = None) -> Assumptions:
+        base = base or self.base
         standard = self.chosen
         scale = standard.in_operation / REFERENCE_LIMIT
         return replace(

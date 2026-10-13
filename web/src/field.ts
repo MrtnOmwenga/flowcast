@@ -41,10 +41,21 @@ export class Fields {
     const a = this.payload.assumptions;
     machines.forEach((machine, m) => {
       if (!machine.on) return;
-      const weight = (machine.kind === "person" ? a.person_emission : a.machine_emission) * machine.emission;
+      const usual = machine.kind === "person" ? a.person_emission
+        : machine.kind === "component" ? a.machine_emission * this.powerOf(machine) : a.machine_emission;
+      const weight = usual * machine.emission;
       const offset = m * this.cells;
       for (let i = 0; i < this.cells; i++) this.level[i] += weight * this.perMachine[offset + i];
     });
+  }
+
+  /** Watts a cabinet component gives off, from the table the service sends; an unknown size counts as a drive. */
+  powerOf(m: Machine): number {
+    const table = this.payload.standard?.components ?? [];
+    const near = (a: number, b: number) => Math.abs(a - b) < 1e-3;
+    const found = table.find(({ size: [sx, sy, sz] }) =>
+      near(sz, m.sz) && ((near(sx, m.sx) && near(sy, m.sy)) || (near(sx, m.sy) && near(sy, m.sx))));
+    return (found ?? table.find((c) => c.name === "drive"))?.power ?? 120;
   }
 
   index(ix: number, iy: number, iz: number): number {
@@ -87,15 +98,16 @@ export class Fields {
   /** Highest particle level in the occupied zone, leaving out the cells where machines release particles. */
   worst(machines: Machine[]): { level: number; position: [number, number, number] } {
     const [nx, ny] = this.shape;
-    const top = Math.round(this.payload.assumptions.occupied_height / this.cell);
+    const top = Math.min(this.shape[2], Math.round(this.payload.assumptions.occupied_height / this.cell));
     const excluded = new Uint8Array(this.cells);
     for (const m of machines) {
-      // The release cells grown by one: above a machine, all around a person.
-      const reach = m.kind === "person" ? 2 : 1;
+      // The release cells grown by one: above a machine, all around a person or a cabinet component.
+      const round = m.kind === "person" || m.kind === "component";
+      const reach = round ? 2 : 1;
       const x0 = Math.round(m.x / this.cell) - reach, x1 = Math.round((m.x + m.sx) / this.cell) + reach;
       const y0 = Math.round(m.y / this.cell) - reach, y1 = Math.round((m.y + m.sy) / this.cell) + reach;
       const top = Math.round(m.sz / this.cell);
-      const z0 = m.kind === "person" ? 0 : top - 1, z1 = m.kind === "person" ? top + 2 : top + 3;
+      const z0 = round ? 0 : top - 1, z1 = round ? top + 2 : top + 3;
       for (let ix = Math.max(0, x0); ix < Math.min(nx, x1); ix++)
         for (let iy = Math.max(0, y0); iy < Math.min(ny, y1); iy++)
           for (let iz = Math.max(0, z0); iz < Math.min(this.shape[2], z1); iz++) excluded[this.index(ix, iy, iz)] = 1;

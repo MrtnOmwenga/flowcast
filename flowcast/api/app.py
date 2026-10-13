@@ -34,6 +34,9 @@ from .standards import DEFAULT_STANDARD, STANDARDS, Rules
 MODELS = Path(os.environ.get("FLOWCAST_MODELS", "data/models"))
 VERIFY = Path(os.environ.get("FLOWCAST_VERIFY", "data/verify"))
 ASSUMPTIONS = Assumptions()
+# A filter-ceiling room is run far harder: about 90 air changes an hour, three times the
+# panels room's air at a similar pressure, so about three times its fan power.
+DESIGN_ASSUMPTIONS = {"ceiling": Assumptions(full_ach=90.0, full_fan_power_kw=4.5)}
 # How far a confirming simulation may differ from the prediction at the worst point
 AGREEMENT_TOLERANCE = 0.3
 # Confidence falls to 0.6, the point at which the interface says "low", at the ensemble
@@ -123,7 +126,7 @@ class RoomState(BaseModel):
             return CabinetRules(limit=self.limit, ambient=self.ambient, minimum_ach=minimum)
         if self.standard not in STANDARDS:
             raise HTTPException(status_code=422, detail=f"unknown standard: {self.standard}")
-        return Rules(standard=self.standard, minimum_ach=minimum)
+        return Rules(standard=self.standard, minimum_ach=minimum, base=DESIGN_ASSUMPTIONS.get(self.room, ASSUMPTIONS))
 
     def spec(self) -> CaseSpec:
         room = self.design()
@@ -152,10 +155,6 @@ def respond(spec: CaseSpec, prediction: Prediction, seconds: float, rules: Rules
     body["standard"] = rules.describe(spec.machines)
     body["metrics"]["confidence"] = confidence(spec, prediction)
     models = model_for(spec)
-    body["room"]["design"] = ROOM_NAMES[spec.room]
-    body["room"]["kind"] = spec.room.kind
-    body["room"]["inlets"] = [list(o) for o in spec.room.inlet_openings()]
-    body["room"]["outlets"] = [list(o) for o in spec.room.outlet_openings()]
     body["compute"] = {"hardware": HARDWARE, "gpu": models.device.type == "cuda", "seconds": seconds,
                        "models": models.members}
     return body

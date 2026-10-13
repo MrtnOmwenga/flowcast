@@ -7,6 +7,7 @@ from dataclasses import asdict
 
 import numpy as np
 
+from ..sim.rooms import ROOMS
 from ..sim.spec import CaseSpec
 from .metrics import Assumptions, summarise
 
@@ -40,6 +41,10 @@ def build(
             "extract_height": room.extract_height,
             "extract_walls": list(room.extract_walls),
             "ach_range": list(room.ach_range),
+            "inlets": [list(o) for o in room.inlet_openings()],
+            "outlets": [list(o) for o in room.outlet_openings()],
+            "kind": room.kind,
+            "design": next((name for name, r in ROOMS.items() if r == room), None),
         },
         "machines": [asdict(m) for m in spec.machines],
         "assumptions": asdict(assumptions),
