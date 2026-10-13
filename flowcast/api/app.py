@@ -218,6 +218,7 @@ def session_for(state: "RoomState", spec: CaseSpec) -> assisting.Session:
         list(spec.machines), spec.ach, spec.room, model_for(spec), rules.assumptions,
         lambda base: lowest_safe(base, rules), max_items=max_items(spec),
         minimum_ach=rules.minimum_ach, standard=rules.chosen.name,
+        ambient=getattr(rules, "ambient", None),
     )
 
 

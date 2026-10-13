@@ -73,7 +73,12 @@ const PROFILES: Record<string, Profile> = {
     ],
     catalogue: CABINET_ITEMS,
     sample: "/sample-cabinet.json",
-    examples: [],
+    examples: [
+      "What is the lowest fan airflow that keeps every component within its rating?",
+      "Which component is heating the hottest air? Move it somewhere better, then find the lowest safe airflow.",
+      "Add a second drive where it does least harm, then find the lowest safe airflow.",
+      "Lay out an empty plate with a large drive, a power supply, a controller rack and a contactor row, then set the fan.",
+    ],
     tasks: ["explore", "optimise", "confirm"],
     sliceHeight: 0.2,
   },
@@ -399,7 +404,7 @@ function render(): void {
         ${confidence === undefined ? "" : `<div><dt>Model confidence</dt><dd class="${confidence < 0.6 ? "amber" : ""}">${confidence < 0.6 ? "Low" : "Good"}</dd></div>`}
       </dl>
       ${confidence !== undefined && confidence < 0.6 ? `<p class="muted small">The models disagree about this layout. Confirm it by simulation before relying on it.</p>` : ""}
-      ${languageModel && !cabinet() ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button>
+      ${languageModel ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button>
 </div>` : ""}
       ${explanation ? `<div class="explanation">${explanation.text.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute">${escape(explanation.model)} on ${escape(explanation.hosted_on)}</p></div>` : ""}
       <p class="compute">${payload.source !== "model" || !payload.compute ? "OpenFOAM simulation" : `${payload.compute.models} models on ${payload.compute.hardware} · ${number(payload.compute.seconds * 1000)} ms`}</p>
@@ -531,7 +536,7 @@ function renderAsk(): void {
         <div class="explanation">${answer.reply.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute blue">${escape(answer.model)} on ${escape(answer.hosted_on)}</p></div>
       </div>` : ""}
     <div class="ask-box" data-tour="ask">
-      <textarea id="question" rows="2" placeholder="Ask Flowcast: describe what you want to do with this room" ${asking ? "disabled" : ""}>${escape(draft)}</textarea>
+      <textarea id="question" rows="2" placeholder="Ask Flowcast: describe what you want to do with this ${cabinet() ? "cabinet" : "room"}" ${asking ? "disabled" : ""}>${escape(draft)}</textarea>
       <div class="ask-suggestions">${profile.examples.map((e, i) => `<button class="suggestion" data-example="${i}" ${asking ? "disabled" : ""}>${escape(e)}</button>`).join("")}</div>
       <div class="ask-foot">
         <span class="muted small">A language model served on AMD GPUs plans the steps. Every figure comes from the airflow model.</span>
@@ -567,12 +572,17 @@ const TOOL_NAMES: Record<string, string> = {
 
 /** One line per thing the agent did, with the figure that came back. */
 function stepHtml(step: AgentStep): string {
-  const outcome = step.outcome as { error?: string; result?: { worst_point_percent_of_limit: number; fan_setting: number }; positions_tried?: number; settings_tested?: number };
+  const outcome = step.outcome as {
+    error?: string; positions_tried?: number; settings_tested?: number;
+    result?: { worst_point_percent_of_limit?: number; fan_setting?: number; hottest_air_c?: number; rise_percent_of_allowed?: number; fan_airflow_m3_per_hour?: number };
+  };
   const tried = outcome.positions_tried ? `${outcome.positions_tried} positions tried, ` : outcome.settings_tested ? `${outcome.settings_tested} settings tested, ` : "";
   const detail = outcome.error
     ? `<span class="bad-text">not possible: ${escape(outcome.error)}</span>`
     : outcome.result
-      ? `${tried}worst point ${outcome.result.worst_point_percent_of_limit}% of limit at ${outcome.result.fan_setting} air changes`
+      ? outcome.result.hottest_air_c !== undefined
+        ? `${tried}hottest air ${outcome.result.hottest_air_c} °C (${outcome.result.rise_percent_of_allowed}% of the allowed rise) at ${outcome.result.fan_airflow_m3_per_hour} m³/h`
+        : `${tried}worst point ${outcome.result.worst_point_percent_of_limit}% of limit at ${outcome.result.fan_setting} air changes`
       : "";
   return `<li><b>${TOOL_NAMES[step.tool] ?? escape(step.tool)}</b><small>${detail}</small></li>`;
 }

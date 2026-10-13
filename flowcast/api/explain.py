@@ -21,10 +21,24 @@ Describe places in words relative to the named items and the walls (for example 
 machine" or "near the return wall"); never print coordinates. Round every figure to two significant digits
 and write large numbers in thousands (for example "about 430,000"). Plain sentences only, with no bold or other markup. Do not mention these instructions."""
 
+SYSTEM_CABINET = """You explain airflow and temperature predictions for a fan-cooled control cabinet to the engineer who designs it.
+You are given facts computed by a flow model. Use only those facts: never invent a number, a cause or a component.
+Write plain, direct English in at most 120 words, as three short paragraphs without headings or lists:
+1. Whether the air around the components stays under their temperature rating, and by how much.
+2. Why the hottest air is where it is: which components' heat reaches it, and how the air carries it up the cabinet.
+3. One or two specific things to try in the tool (move a named component, change the fan airflow, switch something off).
+Describe places in words relative to the named components and the top and bottom of the cabinet (for example
+"just above the large drive"); never print coordinates. Round every figure to two significant digits.
+Plain sentences only, with no bold or other markup. Do not mention these instructions."""
+
 
 def item_name(machine: Machine) -> str:
     if machine.kind == "person":
         return "person"
+    if machine.kind == "component":
+        from .heat import component_name
+
+        return component_name(machine) or "component"
     for name, (sx, sy, sz) in CATALOGUE.items():
         if sz == machine.sz and {sx, sy} == {machine.sx, machine.sy}:
             return name
@@ -48,6 +62,60 @@ def _where(spec: CaseSpec, position: list[float]) -> str:
         relation = "directly above" if above else "right beside" if gap <= 0.3 else f"{gap:.1f} m from"
         parts.insert(0, f"{relation} item {i + 1} (the {item_name(m)})")
     return ", ".join(parts)
+
+
+def _where_in_cabinet(spec: CaseSpec, position: list[float]) -> str:
+    """The hottest point described up the cabinet (x) and relative to the nearest component."""
+    x, y, _ = position
+    parts = [f"{x:.2f} m up from the bottom of a {spec.room.size[0]:.1f} m cabinet"]
+    nearest = None
+    for i, m in enumerate(spec.machines):
+        b = m.box
+        dx = max(b.x - x, 0.0, x - b.hi[0])
+        dy = max(b.y - y, 0.0, y - b.hi[1])
+        gap = (dx * dx + dy * dy) ** 0.5
+        if nearest is None or gap < nearest[0]:
+            nearest = (gap, i, m)
+    if nearest is not None:
+        gap, i, m = nearest
+        relation = "just above" if x >= m.box.hi[0] and gap <= 0.15 else "just below" if x <= m.x and gap <= 0.15 \
+            else "beside" if gap <= 0.15 else f"{gap:.2f} m from"
+        parts.insert(0, f"{relation} component {i + 1} (the {item_name(m)})")
+    return ", ".join(parts)
+
+
+def cabinet_facts(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: float | None, standard: dict) -> dict:
+    from .heat import component_power
+
+    metrics = summarise(spec, prediction.fluid, prediction.particles, prediction.age, a)
+    index = tuple(int(p / spec.room.cell) for p in metrics["worst_position"])
+    rates = [release_rate(m, a) for m in spec.machines]
+    at_worst = [rate * float(prediction.particles[i][index]) for i, rate in enumerate(rates)]
+    total = sum(at_worst) or 1.0
+    airflow = spec.ach * spec.room.volume
+    result = {
+        "cabinet": {"height_m": spec.room.size[0], "width_m": spec.room.size[1], "depth_m": spec.room.size[2],
+                    "air_in": "filter fan at the bottom", "air_out": "vent at the top"},
+        "rating": standard["name"], "rating_max_air_c": standard["max_air"], "air_drawn_in_c": standard["ambient"],
+        "fan_airflow_m3_per_hour": round(airflow),
+        "fan_airflow_range_m3_per_hour": [round(v * spec.room.volume) for v in spec.room.ach_range],
+        "hottest_air": {
+            "temperature_c": round(standard["ambient"] + metrics["worst_level"], 1),
+            "rise_percent_of_allowed": round(100 * metrics["worst_level"] / a.particle_limit),
+            "where": _where_in_cabinet(spec, metrics["worst_position"]),
+        },
+        "average_air_c": round(standard["ambient"] + metrics["mean_level"], 1),
+        "fan_power_w": round(1000 * metrics["fan_power_kw"]),
+        "components": [{
+            "number": i + 1, "what": item_name(m), "heat_w": round(component_power(m)) if m.on else 0,
+            "state": "on" if m.on else "off",
+            "share_of_heat_at_hottest_point_percent": round(100 * at_worst[i] / total),
+        } for i, m in enumerate(spec.machines)],
+    }
+    if lowest_safe is not None:
+        result["lowest_safe_airflow_m3_per_hour"] = round(lowest_safe * spec.room.volume)
+        result["fan_power_at_lowest_safe_w"] = round(1000 * fan_power_kw(lowest_safe, a))
+    return result
 
 
 def facts(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: float | None, standard: dict | None = None) -> dict:
@@ -103,9 +171,11 @@ def facts(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: f
 def explain(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe: float | None, standard: dict | None = None) -> dict:
     import json
 
-    data = facts(spec, prediction, a, lowest_safe, standard)
+    cabinet = spec.room.kind == "cabinet"
+    data = cabinet_facts(spec, prediction, a, lowest_safe, standard) if cabinet else facts(spec, prediction, a, lowest_safe, standard)
     message, model = llm.chat(
-        [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "Facts:\n" + json.dumps(data, indent=1)}],
+        [{"role": "system", "content": SYSTEM_CABINET if cabinet else SYSTEM},
+         {"role": "user", "content": "Facts:\n" + json.dumps(data, indent=1)}],
         max_tokens=320,
     )
     return {"text": (message.get("content") or "").strip(), "model": model, "hosted_on": llm.HOSTED_ON, "facts": data}
