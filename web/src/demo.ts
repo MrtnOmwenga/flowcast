@@ -1,4 +1,4 @@
-import { api, type AgentAnswer, type AgentStep, type Confirmation, type Explanation, type Verification } from "./api";
+import { api, type AgentAnswer, type AgentStep, type Confirmation, type DaySchedule, type Explanation, type Verification } from "./api";
 import { Fields } from "./field";
 import { RoomScene, overlaps, type SliceMode } from "./scene";
 import { startTutorial } from "./tutorial";
@@ -18,10 +18,11 @@ const PERSON: [number, number, number] = [0.4, 0.4, 1.8];
 const LIMITS = { basic: { items: 3, kinds: ["Workbench", "Cabinet", "Filling machine", "Small unit", "Isolator"] } };
 const TOUR_SEEN = "flowcast-tour-seen";
 
-type Task = "explore" | "optimise" | "confirm";
+type Task = "explore" | "optimise" | "plan" | "confirm";
 const TASKS: { id: Task; name: string; about: string }[] = [
   { id: "explore", name: "Explore", about: "Change the room by hand and watch the air respond. Each change is predicted by the model in about a tenth of a second." },
   { id: "optimise", name: "Optimise", about: "Let Flowcast search. The model is run many times to find the best fan setting or the best place for an item." },
+  { id: "plan", name: "Plan a day", about: "Give Flowcast the day's production plan in your own words. A language model reads it, and the airflow model sets the fans for each part of the day." },
   { id: "confirm", name: "Confirm", about: "Check the model against a real OpenFOAM simulation of the room exactly as it is set. This takes about a minute." },
 ];
 
@@ -33,6 +34,9 @@ let positionItem = 0;
 let positionThenFan = true;
 let searchNote = "";
 let confirmation: Confirmation | null = null;
+let plan = "The room is empty overnight. The first operator arrives at 06:00 and starts the first machine. From 08:00 to 12:00 everyone is in and every machine runs. Lunch is 12:00 to 13:00: nobody is in the room but the machines keep running. The afternoon shift, 13:00 to 17:00, is one operator with one machine. Everything is switched off at 17:00.";
+let day: DaySchedule | null = null;
+let planning = false;
 let scene: RoomScene | null = null;
 
 let state: RoomState = { machines: [], ach: 20 };
@@ -293,6 +297,15 @@ function render(): void {
     ${busy ? `<p class="muted small">${busy}</p>` : ""}
     ${searchNote ? `<div class="explanation"><p>${escape(searchNote)}</p></div>` : ""}` : ""}
 
+    ${task === "plan" ? `
+    <section data-tour="plan">
+      <h2>Today's production plan</h2>
+      <textarea id="plan" rows="7" ${planning ? "disabled" : ""}>${escape(plan)}</textarea>
+      <div class="row"><button id="schedule" ${online && languageModel && !planning ? "" : "disabled"}>${planning ? "Reading the plan…" : "Build the fan schedule"}</button></div>
+      ${languageModel ? "" : `<p class="warn">Reading a plan needs the language model, which is not connected.</p>`}
+      ${dayHtml()}
+    </section>` : ""}
+
     ${task === "confirm" ? `
     <section data-tour="verify">
       <h2>A real simulation of this room</h2>
@@ -417,6 +430,54 @@ async function explain(): Promise<void> {
   render();
 }
 
+function dayHtml(): string {
+  if (!day) return "";
+  const [low, high] = fanRange();
+  const bars = day.periods.map((p, i) => {
+    const height = 18 + 82 * ((p.ach - low) / (high - low));
+    return `<button class="bar" data-period="${i}" style="flex:${p.hours};height:${height}%" title="${p.start} to ${p.end}: ${number(p.ach, 1)} air changes"></button>`;
+  }).join("");
+  const rows = day.periods.map((p, i) => {
+    const who = p.on.map((n) => nameOf(state.machines[n - 1] ?? state.machines[0])).join(", ") || "nothing running, nobody in";
+    return `<tr data-period="${i}"><td>${p.start}–${p.end}</td><td>${escape(who)}</td><td>${number(p.ach, 1)}${p.feasible ? "" : " *"}</td><td>${number(p.power_kw, 2)}</td></tr>`;
+  }).join("");
+  return `
+    <div class="day"><div class="today" style="bottom:${18 + 82 * ((day.today_ach - low) / (high - low))}%"><span>today: ${number(day.today_ach)} all day</span></div>${bars}</div>
+    <div class="day-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+    <table class="schedule"><thead><tr><th>When</th><th>In the room</th><th>Fan</th><th>kW</th></tr></thead><tbody>${rows}</tbody></table>
+    ${day.periods.some((p) => !p.feasible) ? `<p class="muted small">* No setting in range is safe for this state; the highest is shown.</p>` : ""}
+    <div class="status ok">${number(day.kwh_per_day, 1)} kWh for the day, against ${number(day.kwh_per_day_today, 1)} at today's setting: ${number(day.saving_percent)}% less, about $${number(day.saving_per_year)} a year</div>
+    <p class="muted small">Click a row to see that part of the day in the room. ${day.room_states} different room states, ${day.settings_tested} fan settings tested by the model. These are the model's settings; confirm each by simulation before using them.</p>
+    <p class="compute blue">Plan read by ${escape(day.model)} on ${escape(day.hosted_on)}</p>`;
+}
+
+async function buildSchedule(): Promise<void> {
+  planning = true;
+  day = null;
+  note = "";
+  render();
+  try {
+    day = await api.schedule(state, plan);
+  } catch (error) {
+    note = `The schedule could not be built: ${(error as Error).message}`;
+  }
+  planning = false;
+  render();
+}
+
+/** Show one part of the day in the room: who and what is on, and its fan setting. */
+function showPeriod(index: number): void {
+  if (!day) return;
+  const period = day.periods[index];
+  state = { ach: period.ach, machines: state.machines.map((m, i) => ({ ...m, on: period.on.includes(i + 1) })) };
+  scene!.setMachines(state.machines);
+  verification = null;
+  confirmation = null;
+  explanation = null;
+  render();
+  void refresh();
+}
+
 function confirmationHtml(): string {
   const c = confirmation;
   if (!c) return "";
@@ -528,6 +589,12 @@ function bind(): void {
   });
   panel.querySelector<HTMLButtonElement>("#optimise")?.addEventListener("click", () => void optimise());
   panel.querySelector<HTMLButtonElement>("#confirm-fan")?.addEventListener("click", () => void confirmFan());
+  const planBox = panel.querySelector<HTMLTextAreaElement>("#plan");
+  planBox?.addEventListener("input", () => (plan = planBox.value));
+  panel.querySelector<HTMLButtonElement>("#schedule")?.addEventListener("click", () => void buildSchedule());
+  panel.querySelectorAll<HTMLElement>("[data-period]").forEach((element) =>
+    element.addEventListener("click", () => showPeriod(Number(element.dataset.period))),
+  );
   panel.querySelector<HTMLButtonElement>("#verify")?.addEventListener("click", () => void verify());
   panel.querySelector<HTMLButtonElement>("#explain")?.addEventListener("click", () => void explain());
   panel.querySelectorAll<HTMLButtonElement>("[data-task]").forEach((button) =>

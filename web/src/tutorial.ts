@@ -5,7 +5,7 @@
 
 interface Step {
   target: string; // "view" for the 3D room, otherwise a selector on the demo page
-  task?: "explore" | "optimise" | "confirm"; // the panel tab that must be open first
+  task?: "explore" | "optimise" | "plan" | "confirm"; // the panel tab that must be open first
   title: string;
   body: string;
 }
@@ -24,7 +24,7 @@ const STEPS: Step[] = [
   {
     target: '[data-tour="tasks"]',
     title: "Three ways to work",
-    body: "Explore changes the room by hand. Optimise lets Flowcast search for the best setting or position. Confirm checks the answer against a real simulation. They use the same model at different scales: one prediction, hundreds of predictions, or none at all.",
+    body: "Explore changes the room by hand. Optimise lets Flowcast search for the best setting or position. Plan a day turns a production plan into a fan schedule. Confirm checks an answer against a real simulation.",
   },
   {
     target: '[data-tour="fan"]',
@@ -45,6 +45,12 @@ const STEPS: Step[] = [
     body: "Finding the lowest safe fan setting takes about eight predictions. Finding the best place for an item takes about sixty, one for each position tried. A flow simulation needs about a minute for each of those; the model does the whole search in seconds.",
   },
   {
+    target: '[data-tour="plan"]',
+    task: "plan",
+    title: "Plan a day",
+    body: "This is the everyday use. Paste the day's production plan as you would write it for a colleague. A language model on AMD GPUs works out who is in the room and what is running in each part of the day, and the airflow model finds the lowest safe fan setting for each. The result is a fan schedule and its energy against running flat out all day.",
+  },
+  {
     target: '[data-tour="verify"]',
     task: "confirm",
     title: "Check the model",
@@ -59,7 +65,7 @@ const STEPS: Step[] = [
 
 let overlay: HTMLElement | null = null;
 
-export function startTutorial(root: HTMLElement, view: HTMLElement, setTask: (task: "explore" | "optimise" | "confirm") => void): void {
+export function startTutorial(root: HTMLElement, view: HTMLElement, setTask: (task: "explore" | "optimise" | "plan" | "confirm") => void): void {
   stop();
   overlay = document.createElement("div");
   overlay.className = "tour";

@@ -78,8 +78,19 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 .ask-output .steps { margin-top: 0; }
 .ask-output .explanation { margin-bottom: 0; }
 .compute.blue { background: #eef6ff; border-color: #9cc6f5; color: #17539c; margin: 0; align-self: center; }
-.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--bg); padding: 4px; border-radius: 10px; margin-top: 14px; }
-.tab { background: transparent; color: var(--muted); padding: 7px 4px; font-weight: 600; }
+.day { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 96px; margin: 12px 0 2px; border-bottom: 1px solid var(--line); }
+.day .bar { background: var(--accent); border-radius: 4px 4px 0 0; padding: 0; min-width: 2px; opacity: 0.85; }
+.day .bar:hover { opacity: 1; }
+.day .today { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--bad); pointer-events: none; }
+.day .today span { position: absolute; right: 0; top: -17px; font-size: 11px; color: var(--bad); background: var(--panel); padding: 0 4px; }
+.day-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+table.schedule { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 4px 0 10px; }
+table.schedule th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+table.schedule td, table.schedule th { padding: 5px 6px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.schedule tbody tr { cursor: pointer; }
+table.schedule tbody tr:hover { background: var(--bg); }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--bg); padding: 4px; border-radius: 10px; margin-top: 14px; }
+.tab { background: transparent; color: var(--muted); padding: 7px 2px; font-weight: 600; font-size: 13px; }
 .tab.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(20, 30, 50, 0.12); }
 .about { margin: 8px 0 0; }
 dl.grid { grid-template-columns: 1fr 1fr; gap: 6px 12px; }

@@ -25,6 +25,7 @@ from ..sim.spec import CaseSpec, Machine
 from . import assistant as assisting
 from . import explain as explaining
 from . import llm, payload
+from . import schedule as scheduling
 from .metrics import Assumptions, protected_zone, summarise
 
 MODELS = Path(os.environ.get("FLOWCAST_MODELS", "data/models"))
@@ -190,6 +191,28 @@ def best_position(request: PositionRequest) -> dict:
         "seconds": time.perf_counter() - started,
         "hardware": HARDWARE,
     }
+
+
+class ScheduleRequest(BaseModel):
+    state: RoomState
+    plan: str = Field(default=scheduling.DEFAULT_PLAN, min_length=10, max_length=3000)
+
+
+@app.get("/api/schedule/example")
+def schedule_example() -> dict:
+    return {"plan": scheduling.DEFAULT_PLAN}
+
+
+@app.post("/api/schedule")
+def schedule(request: ScheduleRequest) -> dict:
+    """Read a production plan in plain words and return the day's fan schedule and its energy."""
+    spec = request.state.spec()
+    try:
+        return scheduling.build(spec, request.plan, ASSUMPTIONS, lowest_safe)
+    except llm.LanguageModelError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=f"The plan could not be turned into a schedule: {error}") from error
 
 
 class Turn(BaseModel):

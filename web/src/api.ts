@@ -83,7 +83,32 @@ export interface Confirmation {
   payload?: Payload;
 }
 
+export interface DayPeriod {
+  start: string;
+  end: string;
+  hours: number;
+  label: string;
+  on: number[];
+  ach: number;
+  power_kw: number;
+  feasible: boolean;
+}
+
+export interface DaySchedule {
+  periods: DayPeriod[];
+  kwh_per_day: number;
+  kwh_per_day_today: number;
+  saving_percent: number;
+  saving_per_year: number;
+  room_states: number;
+  settings_tested: number;
+  today_ach: number;
+  model: string;
+  hosted_on: string;
+}
+
 export const api = {
+  schedule: (state: RoomState, plan: string) => post<DaySchedule>("/api/schedule", { state, plan }),
   confirmFan: (state: RoomState) => post<Confirmation>("/api/confirm-fan", state),
   job: async <T>(id: string): Promise<T> => (await fetch(`${BASE}/api/verify/${id}`)).json(),
   bestPosition: (state: RoomState, item: number, thenFan: boolean) =>

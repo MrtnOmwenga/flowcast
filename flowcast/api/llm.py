@@ -73,12 +73,14 @@ def looks_broken(message: dict) -> bool:
     return len(text) > 30 and (wordlike < 0.5 * len(words) or longest > 60)
 
 
-def chat(messages: list[dict], tools: list[dict] | None = None, max_tokens: int = 500, temperature: float = 0.2) -> tuple[dict, str]:
+def chat(messages: list[dict], tools: list[dict] | None = None, max_tokens: int = 500, temperature: float = 0.2,
+         usable=None) -> tuple[dict, str]:
     """One chat completion. Returns the assistant message and the name of the model that wrote it.
 
     The preferred model is tried first; if it is unreachable or returns nonsense, the next
     one is used, and the caller is told which. The first message must be a system message:
     without one, Gemma on this endpoint keeps generating until it reaches the token limit.
+    `usable` replaces the test for nonsense when the reply is not meant to be prose.
     """
     if not available():
         raise LanguageModelError("no Token Factory key is configured")
@@ -92,7 +94,7 @@ def chat(messages: list[dict], tools: list[dict] | None = None, max_tokens: int 
         except LanguageModelError as error:
             failure = error
             continue
-        if looks_broken(message):
+        if not usable(message) if usable else looks_broken(message):
             _skip_until[model] = time.time() + SKIP_SECONDS
             failure = LanguageModelError(f"{model} returned an unusable reply")
             continue
