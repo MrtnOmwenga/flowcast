@@ -42,7 +42,12 @@ def main() -> None:
 
     def worst_simulated(index: int, setting: int) -> float:
         spec = CaseSpec(machines=layouts[index].machines, ach=settings[setting], room=room)
-        data = np.load(run_case(spec, args.out / f"layout{index:03d}-setting{setting:03d}"))
+        folder = args.out / f"layout{index:03d}-setting{setting:03d}"
+        try:  # reuse a finished simulation, so an interrupted study can be resumed
+            data = np.load(folder / "result.npz")
+            data["particles"]
+        except (OSError, ValueError, KeyError, EOFError):
+            data = np.load(run_case(spec, folder))
         return summarise(spec, data["fluid"], data["particles"], data["age"], a)["worst_level"]
 
     def true_lowest(index: int) -> int | None:
