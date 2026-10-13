@@ -50,7 +50,7 @@ const PROFILES: Record<string, Profile> = {
     designs: [
       { id: "panels", name: "Ceiling panels", note: "Four supply panels, one return wall", ready: true, ach: 20 },
       { id: "ceiling", name: "Filter ceiling", note: "Air moves straight down, out at both ends", ready: true, ach: 60 },
-      { id: "cross", name: "Cross-flow", note: "Filter wall to return wall", ready: false, ach: 20 },
+      { id: "cross", name: "Cross-flow", note: "Filter wall to return wall", ready: true, ach: 20 },
     ],
     catalogue: CLEANROOM_ITEMS,
     sample: "/sample.json",
@@ -125,6 +125,12 @@ let explanation: Explanation | null = null;
 let explaining = false;
 let languageModel: string | null = null;
 let people = false; // whether the served models were trained on rooms with people
+let trained: Record<string, boolean> | null = null; // designs the service has models for
+
+/** A design can be chosen once it is built and the service has models for it. */
+function available(d: Design): boolean {
+  return d.ready && (trained?.[d.id] ?? d.id === profile.designs[0].id);
+}
 
 // Only one prediction request runs at a time; a newer state replaces any that is waiting.
 let inFlight = false;
@@ -172,7 +178,7 @@ function reset(): void {
 
 function setDesign(id: string): void {
   const design = profile.designs.find((d) => d.id === id);
-  if (!design?.ready || state.room === id) return;
+  if (!design || !available(design) || state.room === id) return;
   reset();
   state = { ...state, room: id, ach: design.ach, minimum_ach: profile.kind === "cabinet" ? 0 : 10 };
   render();
@@ -354,7 +360,7 @@ function render(): void {
       ${cabinet() ? "" : `<button class="ghost" id="tour">How to use this</button>`}
     </div>
     <div class="designs" data-tour="designs">
-      ${profile.designs.map((d) => `<button class="design ${d.id === state.room ? "active" : ""}" data-design="${d.id}" ${d.ready ? "" : "disabled"} title="${d.note}">${d.name}${d.ready ? "" : SOON}<small>${d.note}</small></button>`).join("")}
+      ${profile.designs.map((d) => `<button class="design ${d.id === state.room ? "active" : ""}" data-design="${d.id}" ${available(d) ? "" : "disabled"} title="${d.note}">${d.name}${available(d) ? "" : SOON}<small>${d.note}</small></button>`).join("")}
     </div>
     ${std && heatRules ? `
     <section class="rules" data-tour="rules">
@@ -923,6 +929,7 @@ async function start(): Promise<void> {
   try {
     const health = await api.health();
     people = health.people === true;
+    trained = health.designs ?? null;
     languageModel = health.language_model ?? null;
     apply(await api.predict(state), true);
     online = true;

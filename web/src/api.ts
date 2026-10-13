@@ -35,6 +35,8 @@ export interface Health {
   models: number;
   device: string;
   people?: boolean;
+  /** Which room designs have trained models behind the service */
+  designs?: Record<string, boolean>;
   language_model?: string | null;
 }
 
