@@ -48,7 +48,8 @@ export function home(root: HTMLElement): void {
       <h2>If you have tuned the fans in a PC case, you already know the problem.</h2>
       <p>Move one fan and every temperature changes, and you only find out by trying. A factory room is the same problem at a larger scale, with a compliance limit attached and a five-figure energy bill. Flowcast is the tool that lets you try the change on screen first.</p>
       <div class="cta">
-        <a class="button" href="#/demos/cleanroom">Try it</a>
+        <a class="button" href="#/demos/cleanroom">Try the cleanroom</a>
+        <a class="button" href="#/demos/cabinet">Try the control cabinet</a>
         <a class="button secondary" href="#/architecture">How it is built</a>
       </div>
     </section>`;

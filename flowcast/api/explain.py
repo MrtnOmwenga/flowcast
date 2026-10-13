@@ -27,6 +27,8 @@ Write plain, direct English in at most 120 words, as three short paragraphs with
 1. Whether the air around the components stays under their temperature rating, and by how much.
 2. Why the hottest air is where it is: which components' heat reaches it, and how the air carries it up the cabinet.
 3. One or two specific things to try in the tool (move a named component, change the fan airflow, switch something off).
+   A component that only sits beside the hottest air but gives little of its heat is not the cause; suggest moving the
+   components with the largest share, for example nearer the top or out of line with the others.
 Describe places in words relative to the named components and the top and bottom of the cabinet (for example
 "just above the large drive"); never print coordinates. Round every figure to two significant digits.
 Plain sentences only, with no bold or other markup. Do not mention these instructions."""

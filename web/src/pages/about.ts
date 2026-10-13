@@ -87,14 +87,23 @@ export function about(): string {
     <ul>
       <li>It is a screening and planning tool. It does not replace the physical tests a regulated room must pass.</li>
       <li>It is validated against simulation, not against a real cleanroom.</li>
-      <li>It is valid only for the kind of room it was trained on. A new kind of room needs new simulations and training.</li>
+      <li>It is valid only for the kind of room it was trained on. Each room design shown has its own trained models; a new kind of room needs new simulations and training.</li>
       <li>The demonstration room is simplified, and its simulations use a coarse grid of 0.2 metre cells.</li>
       <li>Fan power uses the standard cube law, which is an idealisation of real fans.</li>
     </ul>
 
-    <h2>Where it goes next</h2>
-    <p>The same method applies to any enclosed space where fans move air past obstacles to keep one quantity under a limit: hospital operating theatres and isolation rooms, laboratories, welding bays, battery dry rooms and poultry houses. Adding heat to the model opens data halls, factory control cabinets and electronics enclosures.</p>
+    <h2>The second demo: a control cabinet</h2>
+    <p>A fan-cooled control cabinet is the same problem with heat in place of particles. A filter fan blows air in at the bottom, drives, power supplies and transformers give off their losses as heat, and the air around every component must stay under the temperature the components are rated for. The question is again the lowest fan setting that keeps everything within the limit, and where each component should go.</p>
+    <ul>
+      <li><b>The same pipeline, a different room.</b> The cabinet was simulated with the same OpenFOAM set-up and the same two networks were trained on it; only the room, the openings and the readouts changed.</li>
+      <li><b>Heat travels like particles here.</b> The fan moves heat much faster than warm air rises, so each component's heat is carried as a tracer and the temperatures add up, exactly as particle levels do. This holds for fan-cooled cabinets, not for cabinets cooled by natural draught.</li>
+      <li><b>The heat figures are typical losses, not measurements.</b> A 4 kW drive is taken to give off 120 W, a 15 kW drive 400 W, and so on; the page lists them. A datasheet would replace them.</li>
+      <li><b>Why it matters.</b> A cabinet fan that runs slower draws less dust through its filter, makes less noise and lasts longer. Placement matters more: a drive mounted below another heats the air the second one breathes.</li>
+    </ul>
 
-    <p class="cta"><a class="button" href="#/demos/cleanroom">Open the cleanroom demo</a> <a class="button secondary" href="#/architecture">How it is built</a></p>
+    <h2>Where it goes next</h2>
+    <p>The same method applies to any enclosed space where fans move air past obstacles to keep one quantity under a limit: hospital operating theatres and isolation rooms, laboratories, welding bays, battery dry rooms and poultry houses. With heat carried as in the cabinet, it extends to server chassis, PC cases and other electronics enclosures; data halls and cold stores, where warm air rising matters, need the heat to drive the air as well.</p>
+
+    <p class="cta"><a class="button" href="#/demos/cleanroom">Open the cleanroom demo</a> <a class="button" href="#/demos/cabinet">Open the cabinet demo</a> <a class="button secondary" href="#/architecture">How it is built</a></p>
   </article>`;
 }
