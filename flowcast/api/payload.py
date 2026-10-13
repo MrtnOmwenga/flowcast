@@ -39,6 +39,7 @@ def build(
             "extract_y": list(room.extract_y),
             "extract_height": room.extract_height,
             "extract_walls": list(room.extract_walls),
+            "ach_range": list(room.ach_range),
         },
         "machines": [asdict(m) for m in spec.machines],
         "assumptions": asdict(assumptions),

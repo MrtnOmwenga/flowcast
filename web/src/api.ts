@@ -58,7 +58,21 @@ export interface AgentAnswer {
   hosted_on: string;
 }
 
+export interface PositionResult {
+  state: RoomState;
+  item: string;
+  positions_tried: number;
+  before_percent: number;
+  after_percent: number;
+  worst_tried_percent: number;
+  fan: { found: boolean; lowest_safe_fan_setting?: number; settings_tested: number } | null;
+  seconds: number;
+  hardware: string;
+}
+
 export const api = {
+  bestPosition: (state: RoomState, item: number, thenFan: boolean) =>
+    post<PositionResult>("/api/best-position", { state, item, then_fan: thenFan }),
   ask: (state: RoomState, conversation: { role: string; content: string }[]) =>
     post<AgentAnswer>("/api/assistant", { state, conversation }),
   explain: (state: RoomState) => post<Explanation>("/api/explain", state),

@@ -37,26 +37,72 @@ class LanguageModelError(RuntimeError):
     pass
 
 
+def models() -> list[str]:
+    """The preferred model first, then the ones to fall back on, all served from Token Factory."""
+    preferred = os.environ.get("FLOWCAST_LLM_MODEL", DEFAULT_MODEL)
+    fallbacks = os.environ.get("FLOWCAST_LLM_FALLBACKS", "DeepSeek-V4-Flash").split(",")
+    return [preferred, *(m.strip() for m in fallbacks if m.strip() and m.strip() != preferred)]
+
+
 def model_name() -> str:
-    return os.environ.get("FLOWCAST_LLM_MODEL", DEFAULT_MODEL)
+    return models()[0]
 
 
 def available() -> bool:
     return bool(os.environ.get("AMD_TOKEN_FACTORY_KEY"))
 
 
-def chat(messages: list[dict], tools: list[dict] | None = None, max_tokens: int = 500, temperature: float = 0.2) -> dict:
-    """One chat completion. Returns the assistant message (which may contain tool calls).
+# When a model returns nonsense it is skipped for a while, so a broken endpoint does not
+# slow every request down while it is out of order.
+_skip_until: dict[str, float] = {}
+SKIP_SECONDS = 300
 
-    The first message must be a system message: without one, Gemma on this endpoint keeps
-    generating until it reaches the token limit. Rate-limit replies are retried briefly.
+
+def looks_broken(message: dict) -> bool:
+    """Whether a reply is the run of stray symbols a faulty endpoint produces, not language."""
+    if message.get("tool_calls"):
+        return False
+    text = (message.get("content") or "").strip()
+    if not text:
+        return True
+    if text.startswith("<|tool_call>"):
+        return True
+    words = [w for w in text.replace("\n", " ").split(" ") if w]
+    wordlike = sum(1 for w in words if sum(c.isalpha() for c in w) >= max(1, 0.6 * len(w)))
+    longest = max((len(w) for w in words), default=0)
+    return len(text) > 30 and (wordlike < 0.5 * len(words) or longest > 60)
+
+
+def chat(messages: list[dict], tools: list[dict] | None = None, max_tokens: int = 500, temperature: float = 0.2) -> tuple[dict, str]:
+    """One chat completion. Returns the assistant message and the name of the model that wrote it.
+
+    The preferred model is tried first; if it is unreachable or returns nonsense, the next
+    one is used, and the caller is told which. The first message must be a system message:
+    without one, Gemma on this endpoint keeps generating until it reaches the token limit.
     """
-    key = os.environ.get("AMD_TOKEN_FACTORY_KEY")
-    if not key:
+    if not available():
         raise LanguageModelError("no Token Factory key is configured")
     if not messages or messages[0].get("role") != "system":
         raise ValueError("the first message must be a system message")
-    body = {"model": model_name(), "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+    failure: Exception | None = None
+    candidates = [m for m in models() if _skip_until.get(m, 0) < time.time()] or models()[-1:]
+    for model in candidates:
+        try:
+            message = _complete(model, messages, tools, max_tokens, temperature)
+        except LanguageModelError as error:
+            failure = error
+            continue
+        if looks_broken(message):
+            _skip_until[model] = time.time() + SKIP_SECONDS
+            failure = LanguageModelError(f"{model} returned an unusable reply")
+            continue
+        return message, model
+    raise failure or LanguageModelError("the language model did not answer")
+
+
+def _complete(model: str, messages: list[dict], tools: list[dict] | None, max_tokens: int, temperature: float) -> dict:
+    key = os.environ["AMD_TOKEN_FACTORY_KEY"]
+    body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
     if tools:
         body["tools"] = tools
         body["tool_choice"] = "auto"

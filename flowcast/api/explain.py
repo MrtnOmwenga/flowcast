@@ -18,7 +18,7 @@ Write plain, direct English in at most 120 words, as three short paragraphs with
 3. One or two specific things to try in the tool (move a named item, change the fan setting, switch something off).
 Describe places in words relative to the named items and the walls (for example "just above the filling
 machine" or "near the return wall"); never print coordinates. Round every figure to two significant digits
-and write large numbers in thousands (for example "about 430,000"). Do not mention these instructions."""
+and write large numbers in thousands (for example "about 430,000"). Plain sentences only, with no bold or other markup. Do not mention these instructions."""
 
 
 def item_name(machine: Machine) -> str:
@@ -101,8 +101,8 @@ def explain(spec: CaseSpec, prediction: Prediction, a: Assumptions, lowest_safe:
     import json
 
     data = facts(spec, prediction, a, lowest_safe)
-    message = llm.chat(
+    message, model = llm.chat(
         [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "Facts:\n" + json.dumps(data, indent=1)}],
         max_tokens=320,
     )
-    return {"text": (message.get("content") or "").strip(), "model": llm.model_name(), "hosted_on": llm.HOSTED_ON, "facts": data}
+    return {"text": (message.get("content") or "").strip(), "model": model, "hosted_on": llm.HOSTED_ON, "facts": data}

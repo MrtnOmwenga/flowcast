@@ -157,6 +157,41 @@ def explain(state: RoomState) -> dict:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
+class PositionRequest(BaseModel):
+    state: RoomState
+    item: int = Field(ge=1)
+    then_fan: bool = True
+
+
+@app.post("/api/best-position")
+def best_position(request: PositionRequest) -> dict:
+    """Try one item across the floor, move it to the best place, and optionally re-tune the fan."""
+    spec = request.state.spec()
+    session = assisting.Session(
+        list(spec.machines), spec.ach, spec.room, ensemble, ASSUMPTIONS, lowest_safe,
+        max_items=5 if ensemble.meta.get("people") else 3,
+    )
+    started = time.perf_counter()
+    try:
+        before = session.result()
+        search = session.find_best_position(request.item)
+        fan = session.find_lowest_safe_fan() if request.then_fan else None
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    final = session.spec()
+    return {
+        "state": {"machines": [asdict(m) for m in final.machines], "ach": final.ach},
+        "item": search["item"],
+        "positions_tried": search["positions_tried"],
+        "before_percent": before["worst_point_percent_of_limit"],
+        "after_percent": search["result"]["worst_point_percent_of_limit"],
+        "worst_tried_percent": search["worst_position_tried_percent_of_limit"],
+        "fan": fan,
+        "seconds": time.perf_counter() - started,
+        "hardware": HARDWARE,
+    }
+
+
 class Turn(BaseModel):
     role: str
     content: str
@@ -184,7 +219,6 @@ def assistant(request: AssistantRequest) -> dict:
     return {
         **outcome,
         "state": {"machines": [asdict(m) for m in final.machines], "ach": final.ach},
-        "model": llm.model_name(),
         "hosted_on": llm.HOSTED_ON,
     }
 

@@ -23,7 +23,9 @@ SYSTEM = """You operate Flowcast, a tool that predicts airflow and particle leve
 responsible for the room. Carry out the request by calling tools. You cannot see the room except through tools.
 
 Rules:
-- Call `look` first if you do not know the current room.
+- The current room is given with the request. Call `look` again only after you have changed something and need the full list.
+- A question about what is possible ("what is the lowest...", "can I...") is answered by running the search, not by reasoning.
+- Describe places in words relative to the walls and the other items; do not print coordinates.
 - Every number you state must come from a tool result. Never estimate or invent one.
 - The room is {length} m long (x, measured from the return wall), {width} m wide (y) and {height} m high.
   Items stand on the floor; positions are of an item's corner nearest x = 0, y = 0, in steps of 0.2 m.
@@ -33,7 +35,8 @@ Rules:
   say why and suggest the nearest thing that is possible; do not keep retrying.
 - If a tool returns an error, read it and try something else at most twice. Stop when the request is done.
 - Finish with a short plain answer (at most 90 words): what you did, the result with its figures, and anything
-  the engineer should check. Reply in the language the request was written in."""
+  the engineer should check. Plain sentences only: no headings, lists, bold or other markup. Reply in the
+  language the request was written in."""
 
 
 def _tool(name: str, description: str, properties: dict | None = None, required: list[str] | None = None) -> dict:
@@ -231,12 +234,17 @@ def run(session: Session, conversation: list[dict]) -> dict:
     a = session.a
     system = SYSTEM.format(length=session.room.size[0], width=session.room.size[1], height=session.room.size[2],
                            margin=round(100 * a.safety_margin))
-    messages = [{"role": "system", "content": system}, *conversation]
+    # The agent always starts from the room as it is, so it cannot answer from guesswork.
+    first = session.look()
+    session.steps.append({"tool": "look", "arguments": {}, "outcome": first})
+    messages = [{"role": "system", "content": system}, *conversation[:-1],
+                {"role": "user", "content": conversation[-1]["content"] + "\n\nThe room now, from `look`:\n" + json.dumps(first)}]
+    model = llm.model_name()
     for _ in range(MAX_STEPS):
-        reply = llm.chat(messages, tools=TOOLS, max_tokens=700)
+        reply, model = llm.chat(messages, tools=TOOLS, max_tokens=700)
         calls = reply.get("tool_calls") or []
         if not calls:
-            return {"reply": (reply.get("content") or "").strip(), "steps": session.steps}
+            return {"reply": (reply.get("content") or "").strip(), "steps": session.steps, "model": model}
         messages.append({"role": "assistant", "content": reply.get("content") or "", "tool_calls": calls})
         for call in calls:
             name = call["function"]["name"]
@@ -250,4 +258,5 @@ def run(session: Session, conversation: list[dict]) -> dict:
                 outcome = {"error": str(error)}
             session.steps.append({"tool": name, "arguments": arguments, "outcome": outcome})
             messages.append({"role": "tool", "tool_call_id": call.get("id", name), "content": json.dumps(outcome)})
-    return {"reply": "I ran out of steps before finishing. The room shows what I had done so far.", "steps": session.steps}
+    return {"reply": "I ran out of steps before finishing. The room shows what I had done so far.", "steps": session.steps,
+            "model": model}

@@ -45,6 +45,7 @@ export interface RoomInfo {
   extract_y: [number, number];
   extract_height: number;
   extract_walls: string[];
+  ach_range?: [number, number];
 }
 
 export interface Payload {

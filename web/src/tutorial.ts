@@ -4,7 +4,8 @@
  */
 
 interface Step {
-  target: string; // "view" for the 3D room, otherwise a selector inside the panel
+  target: string; // "view" for the 3D room, otherwise a selector on the demo page
+  task?: "explore" | "optimise" | "confirm"; // the panel tab that must be open first
   title: string;
   body: string;
 }
@@ -13,43 +14,52 @@ const STEPS: Step[] = [
   {
     target: "view",
     title: "The room",
-    body: "You are looking into a small cleanroom. Clean air comes in through the four blue ceiling panels and leaves through the grey grille low on one end wall. The moving dots follow the predicted airflow and turn from blue to red where the particle level is high. Drag the background to orbit, scroll to zoom.",
-  },
-  {
-    target: "view",
-    title: "Move a machine",
-    body: "Drag any machine across the floor. Each move sends the new layout to the model, which returns the whole room's airflow and particle field, so the picture follows your hand. A flow simulation of the same change takes about a minute.",
-  },
-  {
-    target: '[data-tour="equipment"]',
-    title: "Switch machines on and off",
-    body: "A running machine releases particles; one that is off does not. Switching is instant because nothing is recomputed: particles do not change the airflow, so each machine's particle field is predicted separately and they are simply added up.",
-  },
-  {
-    target: '[data-tour="fan"]',
-    title: "The fan setting",
-    body: "This is how much air the fans supply, in room volumes an hour. Less air costs far less to move, since fan power falls with the cube of airflow, but particles build up. The button searches the settings for the lowest one that keeps the room under its limit with a margin to spare.",
+    body: "You are looking into a small cleanroom. Clean air comes in through the four blue ceiling panels and leaves through the grey grille low on one end wall. The moving dots follow the predicted airflow and turn from blue to red where the particle level is high. Drag the background to orbit and scroll to zoom. Drag a machine or a person to move it: each move is sent to the model, which returns the whole room's air in about a tenth of a second.",
   },
   {
     target: '[data-tour="readouts"]',
-    title: "The answer",
-    body: "The headline says whether the worst point in the room is within the particle limit. Amber means the prediction is too close to the limit to call. Model confidence drops when several independently trained models disagree about this layout, which is the cue to check it.",
+    title: "The room now",
+    body: "The headline says whether the worst point in the room is within its particle limit. Amber means too close to call. The saving is against the fan setting the room runs at today. Confidence drops when four independently trained models disagree about this layout.",
   },
   {
-    target: '[data-tour="view"]',
-    title: "What the slice shows",
-    body: "The coloured sheet is a horizontal cut through the room. It can show the particle level or where the air is stagnant, and the slider moves it up and down. The red marker stays on the worst point, which is where a particle counter would be most useful.",
+    target: '[data-tour="tasks"]',
+    title: "Three ways to work",
+    body: "Explore changes the room by hand. Optimise lets Flowcast search for the best setting or position. Confirm checks the answer against a real simulation. They use the same model at different scales: one prediction, hundreds of predictions, or none at all.",
+  },
+  {
+    target: '[data-tour="fan"]',
+    task: "explore",
+    title: "The fan setting",
+    body: "This is how much air the fans supply, in room volumes an hour. Fan power falls with roughly the cube of airflow, so a little less air saves a lot, but particles build up. Slide it down and watch the worst point climb towards the limit.",
+  },
+  {
+    target: '[data-tour="equipment"]',
+    task: "explore",
+    title: "What is in the room",
+    body: "Switch a machine off or send a person away and the picture updates at once, with nothing recomputed. Particles do not change the airflow, so each source's particle field is predicted separately and they are simply added up. Adding, turning or moving an item does change the airflow, so those ask the model again.",
+  },
+  {
+    target: '[data-tour="optimise"]',
+    task: "optimise",
+    title: "Let it search",
+    body: "Finding the lowest safe fan setting takes about eight predictions. Finding the best place for an item takes about sixty, one for each position tried. A flow simulation needs about a minute for each of those; the model does the whole search in seconds.",
   },
   {
     target: '[data-tour="verify"]',
+    task: "confirm",
     title: "Check the model",
-    body: "A prediction is a model's estimate. This button runs a real OpenFOAM simulation of the room exactly as you have set it and compares the two. If they disagree, the page says so and withdraws the recommendation.",
+    body: "A prediction is a model's estimate. This runs a real OpenFOAM simulation of the room exactly as you have set it and compares the two. If they disagree, the page says so and withdraws the recommendation.",
+  },
+  {
+    target: '[data-tour="ask"]',
+    title: "Or just ask",
+    body: "Describe what you want in plain words. A language model served on AMD GPUs plans the steps and carries them out with the same tools you have just seen, then reports what it did. Every figure in its answer comes from the airflow model, not from the language model.",
   },
 ];
 
 let overlay: HTMLElement | null = null;
 
-export function startTutorial(view: HTMLElement, panel: HTMLElement): void {
+export function startTutorial(root: HTMLElement, view: HTMLElement, setTask: (task: "explore" | "optimise" | "confirm") => void): void {
   stop();
   overlay = document.createElement("div");
   overlay.className = "tour";
@@ -60,9 +70,10 @@ export function startTutorial(view: HTMLElement, panel: HTMLElement): void {
   const show = (): void => {
     if (!overlay) return;
     const step = STEPS[index];
-    const target = step.target === "view" ? view : panel.querySelector<HTMLElement>(step.target);
+    if (step.task) setTask(step.task);
+    const target = step.target === "view" ? view : root.querySelector<HTMLElement>(step.target);
     if (!target) return next();
-    if (step.target !== "view") target.scrollIntoView({ block: "center" });
+    if (step.target !== "view") target.scrollIntoView({ block: "nearest" });
     const rect = target.getBoundingClientRect();
     const inset = step.target === "view" ? 14 : -6;
     const hole = overlay.querySelector<HTMLElement>(".tour-hole")!;
