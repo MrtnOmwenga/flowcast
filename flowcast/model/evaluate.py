@@ -12,7 +12,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ..api.metrics import Assumptions, protected_zone, summarise
+from ..api.heat import CabinetRules
+from ..api.metrics import Assumptions, protected_zone, release_rate, summarise
 from .dataset import load_cases
 from .predict import Ensemble
 
@@ -42,11 +43,14 @@ def evaluate(data: Path, models: Path, split: str = "test") -> dict:
             "age_error": relative_error(prediction.age, case["age"], fluid),
         }
         if spec.machines:
-            zone = protected_zone(spec, fluid, assumptions)
-            predicted = summarise(spec, fluid, prediction.particles, prediction.age, assumptions)
-            actual = summarise(spec, fluid, case["particles"], case["age"], assumptions)
-            level_p = prediction.particles.sum(axis=0)
-            level_a = case["particles"].sum(axis=0)
+            # A cabinet is judged against its temperature rating, with each component weighted by its heat.
+            a = CabinetRules().assumptions(spec.machines) if spec.room.kind == "cabinet" else assumptions
+            zone = protected_zone(spec, fluid, a)
+            predicted = summarise(spec, fluid, prediction.particles, prediction.age, a)
+            actual = summarise(spec, fluid, case["particles"], case["age"], a)
+            weights = np.array([release_rate(m, a) for m in spec.machines]) if spec.room.kind == "cabinet" else np.ones(len(spec.machines))
+            level_p = np.tensordot(weights, prediction.particles, axes=1)
+            level_a = np.tensordot(weights, case["particles"], axes=1)
             row.update(
                 particle_error=relative_error(level_p, level_a, zone),
                 worst_point_error=abs(predicted["worst_level"] - actual["worst_level"]) / actual["worst_level"],
@@ -71,6 +75,8 @@ def evaluate(data: Path, models: Path, split: str = "test") -> dict:
         "particle_error": stats("particle_error"),
         "worst_point_error": stats("worst_point_error"),
         "mean_level_error": stats("mean_level_error"),
+        # The confidence reading falls to "low" at the spread exceeded by the fifth of rooms where members disagree most
+        "spread": {**stats("spread"), "p80": float(np.percentile([r["spread"] for r in rows if "spread" in r], 80))},
         "same_verdict_fraction": float(np.mean([r["same_verdict"] for r in rows if "same_verdict" in r])),
         "cases": rows,
     }
