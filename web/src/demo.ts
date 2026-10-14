@@ -29,7 +29,7 @@ const SOON = `<span class="soon">soon</span>`;
 // The limits the served models were trained within. Models trained with people allow more.
 const LIMITS = { basic: { items: 3, kinds: ["Workbench", "Cabinet", "Filling machine", "Small unit", "Isolator"] } };
 
-/** A room design: each has its own trained models. `ach` is the setting it opens at. */
+/** A room design: each has its own trained models. `ach` is the setting it opens at: how such a room runs today. */
 interface Design { id: string; name: string; note: string; ready: boolean; ach: number }
 interface Profile {
   kind: "cleanroom" | "cabinet";
@@ -48,9 +48,9 @@ const PROFILES: Record<string, Profile> = {
     kind: "cleanroom",
     title: "Cleanroom demo",
     designs: [
-      { id: "panels", name: "Ceiling panels", note: "Four supply panels, one return wall", ready: true, ach: 20 },
-      { id: "ceiling", name: "Filter ceiling", note: "Air moves straight down, out at both ends", ready: true, ach: 60 },
-      { id: "cross", name: "Cross-flow", note: "Filter wall to return wall", ready: true, ach: 20 },
+      { id: "panels", name: "Ceiling panels", note: "Four supply panels, one return wall", ready: true, ach: 30 },
+      { id: "ceiling", name: "Filter ceiling", note: "Air moves straight down, out at both ends", ready: true, ach: 90 },
+      { id: "cross", name: "Cross-flow", note: "Filter wall to return wall", ready: true, ach: 30 },
     ],
     catalogue: CLEANROOM_ITEMS,
     sample: "/sample.json",
@@ -67,7 +67,7 @@ const PROFILES: Record<string, Profile> = {
     kind: "cabinet",
     title: "Control cabinet demo",
     designs: [
-      { id: "cabinet", name: "Filter fan", note: "In at the bottom, out at the top", ready: true, ach: 625 },
+      { id: "cabinet", name: "Filter fan", note: "In at the bottom, out at the top", ready: true, ach: 1562.5 },
       { id: "roof", name: "Roof fan", note: "Drawn out through the roof", ready: false, ach: 625 },
       { id: "side", name: "Side to side", note: "In one side wall, out the other", ready: false, ach: 625 },
     ],
