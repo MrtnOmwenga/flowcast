@@ -84,7 +84,7 @@ def evaluate(data: Path, models: Path, split: str = "test") -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate the ensemble on held-out rooms.")
-    parser.add_argument("--data", type=Path, default=Path("data/cases"))
+    parser.add_argument("--data", type=Path, nargs="+", default=[Path("data/cases")], help="one or more folders of cases")
     parser.add_argument("--models", type=Path, default=Path("data/models"))
     parser.add_argument("--split", default="test")
     parser.add_argument("--out", type=Path, default=None)

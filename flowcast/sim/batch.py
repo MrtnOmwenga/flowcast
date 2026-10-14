@@ -85,6 +85,7 @@ def main() -> None:
     parser.add_argument("--average-last", type=int, default=None)
     parser.add_argument("--prefix", default="case", help="case folder prefix; use a new one for each seed")
     parser.add_argument("--room", choices=tuple(ROOMS), default=DEFAULT_ROOM, help="which room design to simulate")
+    parser.add_argument("--realistic", action="store_true", help="arrange items as real rooms are, not anywhere at random")
     args = parser.parse_args()
 
     overrides = {}
@@ -92,7 +93,7 @@ def main() -> None:
         overrides["steps"] = args.steps
     if args.average_last is not None:
         overrides["average_last"] = args.average_last
-    specs = sample_specs(args.count, args.seed, room=ROOMS[args.room], **overrides)
+    specs = sample_specs(args.count, args.seed, room=ROOMS[args.room], realistic=args.realistic, **overrides)
     run_batch(specs, args.out, args.workers, prefix=args.prefix)
 
 

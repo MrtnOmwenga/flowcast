@@ -50,7 +50,7 @@ def baseline_error(train: RoomDataset, held_out: RoomDataset) -> torch.Tensor:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train one flow or particle network.")
     parser.add_argument("--task", choices=tuple(CHANNELS), required=True)
-    parser.add_argument("--data", type=Path, default=Path("data/cases"))
+    parser.add_argument("--data", type=Path, nargs="+", default=[Path("data/cases")], help="one or more folders of cases")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=100)

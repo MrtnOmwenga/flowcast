@@ -26,9 +26,11 @@ def split_of(case_name: str) -> str:
     return "test" if bucket < 15 else "validation" if bucket < 25 else "train"
 
 
-def load_cases(root: Path, split: str) -> list[dict]:
+def load_cases(root: Path | list[Path], split: str) -> list[dict]:
+    """The finished cases of one split, from one folder or several."""
+    roots = [root] if isinstance(root, (str, Path)) else list(root)
     cases = []
-    for path in sorted(Path(root).glob(f"*/{RESULT_NAME}")):
+    for path in sorted(p for r in roots for p in Path(r).glob(f"*/{RESULT_NAME}")):
         if split_of(path.parent.name) != split:
             continue
         data = np.load(path)
@@ -51,7 +53,7 @@ class RoomDataset(Dataset):
     mirrored, which quadruples the effective amount of data.
     """
 
-    def __init__(self, root: Path, split: str, task: str, augment: bool = False):
+    def __init__(self, root: Path | list[Path], split: str, task: str, augment: bool = False):
         self.task = task
         self.augment = augment
         self.cases = load_cases(root, split)
