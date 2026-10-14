@@ -88,9 +88,9 @@ export function about(): string {
     <ul>
       <li>With cells of 2.4 cm, fine enough to resolve the slots, the simulated air velocity differs from the measurements by <b>4.5% of the supply velocity</b> on average along the four lines.</li>
       <li>On 20 cm cells, the grid Flowcast's demonstration rooms are simulated on, the average difference is <b>10%</b>, most of it in the jet under the ceiling, which a single cell cannot resolve.</li>
-      <li>The difference falls steadily as the cells get smaller: 10%, 7.9%, 6.1% and 4.5% for 20, 10, 5 and 2.4 cm.</li>
+      <li>The difference falls steadily as the cells get smaller: 10%, 7.9%, 6.1% and 4.5% for 20, 10, 5 and 2.4 cm. Halving the cells once more, to 1.2 cm, gives 4.3%: the grid no longer matters, and what remains is the limit of the turbulence model, the standard one for room airflow.</li>
     </ul>
-    <figure class="figure"><img src="/validation-annex20.svg" alt="Measured and simulated air velocity along four lines in the IEA Annex 20 test room, for four grid sizes" loading="lazy" /><figcaption>Red points: laser-Doppler measurements (Nielsen, 1990, published by Aalborg University). Lines: Flowcast's simulation set-up on four grids.</figcaption></figure>
+    <figure class="figure"><img src="/validation-annex20.svg" alt="Measured and simulated air velocity along four lines in the IEA Annex 20 test room, for four grid sizes" loading="lazy" /><figcaption>Red points: laser-Doppler measurements (Nielsen, 1990, published by Aalborg University). Lines: Flowcast's simulation set-up on five grids.</figcaption></figure>
     <p>So the set-up reproduces a real room well when the grid is fine, and the coarse demonstration grid is the larger source of error, as the grid study also found. A finer training set is the obvious next step.</p>
 
     <h2>What it is not</h2>
