@@ -215,3 +215,7 @@ button.ghost { padding: 6px 10px; font-size: 13px; }
   .stats, .cards { grid-template-columns: 1fr; }
   .hero-text { padding: 56px 20px 64px; }
 }
+
+.figure { margin: 1.25rem 0; }
+.figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line, #dde3ea); border-radius: 8px; background: #fff; }
+.figure figcaption { margin-top: 0.4rem; font-size: 0.85rem; color: var(--muted, #5f6b7d); }

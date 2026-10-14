@@ -83,10 +83,20 @@ export function about(): string {
     </ul>
     <p>Where the independently trained models disagree most, the error roughly doubles. Those are the rooms the interface marks as low confidence.</p>
 
+    <h2>Checked against a real experiment</h2>
+    <p>The model is only as good as the simulations it learns from, so the simulation set-up itself was checked against measurements. The test is the room experiment that the International Energy Agency's Annex 20 adopted as a benchmark in 1990: a room 9 metres long and 3 metres high, with air blown in through a slot under the ceiling and leaving at the floor of the far wall, its air velocity measured by laser along four lines. The same solver, turbulence model and settings that produce Flowcast's training data were run on that room.</p>
+    <ul>
+      <li>With cells of 2.4 cm, fine enough to resolve the slots, the simulated air velocity differs from the measurements by <b>4.5% of the supply velocity</b> on average along the four lines.</li>
+      <li>On 20 cm cells, the grid Flowcast's demonstration rooms are simulated on, the average difference is <b>10%</b>, most of it in the jet under the ceiling, which a single cell cannot resolve.</li>
+      <li>The difference falls steadily as the cells get smaller: 10%, 7.9%, 6.1% and 4.5% for 20, 10, 5 and 2.4 cm.</li>
+    </ul>
+    <figure class="figure"><img src="/validation-annex20.svg" alt="Measured and simulated air velocity along four lines in the IEA Annex 20 test room, for four grid sizes" loading="lazy" /><figcaption>Red points: laser-Doppler measurements (Nielsen, 1990, published by Aalborg University). Lines: Flowcast's simulation set-up on four grids.</figcaption></figure>
+    <p>So the set-up reproduces a real room well when the grid is fine, and the coarse demonstration grid is the larger source of error, as the grid study also found. A finer training set is the obvious next step.</p>
+
     <h2>What it is not</h2>
     <ul>
       <li>It is a screening and planning tool. It does not replace the physical tests a regulated room must pass.</li>
-      <li>It is validated against simulation, not against a real cleanroom.</li>
+      <li>The model is validated against simulation, and the simulation set-up against a published room experiment, not against a real cleanroom.</li>
       <li>It is valid only for the kind of room it was trained on. Each room design shown has its own trained models; a new kind of room needs new simulations and training.</li>
       <li>The demonstration room is simplified, and its simulations use a coarse grid of 0.2 metre cells.</li>
       <li>Fan power uses the standard cube law, which is an idealisation of real fans.</li>
