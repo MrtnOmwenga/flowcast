@@ -97,11 +97,11 @@ def compare(simulated: dict[str, np.ndarray], measured: dict) -> dict:
 
 def figure(results: dict[str, dict], measured: dict, path: Path) -> None:
     """Four small charts, one per measured line: points are measurements, lines are simulations."""
-    colours = ["#b9c2cf", "#f0a35e", "#1f7ae0", "#0b3d91"]
+    colours = ["#b9c2cf", "#f0a35e", "#2fbf5b", "#1f7ae0", "#0b3d91", "#6b21a8"]
     width, height, pad = 300, 220, 44
     titles = {"x=H": "Vertical line one room-height from the inlet", "x=2H": "Vertical line two room-heights from the inlet",
               "y=h/2": "Along the ceiling, through the middle of the jet", "y=H-h/2": "Along the floor"}
-    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {2 * width} {2 * height + 30}" font-family="sans-serif" font-size="10">',
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {2 * width} {2 * height + 44}" font-family="sans-serif" font-size="10">',
              '<rect width="100%" height="100%" fill="white"/>']
     for index, name in enumerate(LINES):
         ox, oy = (index % 2) * width, (index // 2) * height
@@ -116,16 +116,15 @@ def figure(results: dict[str, dict], measured: dict, path: Path) -> None:
             parts.append(f'<text x="{ox + pad - 5}" y="{sy(tick) + 3}" text-anchor="end" fill="#5f6b7d">{tick:g}</text>')
         label = "distance below the ceiling / room height" if name.startswith("x=") else "distance from the inlet wall / room height"
         parts.append(f'<text x="{ox + (width + pad) / 2}" y="{oy + height - 6}" text-anchor="middle" fill="#5f6b7d">{label}</text>')
-        for colour, (grid, result) in zip(colours[-len(results):], results.items()):
+        for colour, (grid, result) in zip(colours[: len(results)], results.items()):
             points = " ".join(f"{sx(p):.1f},{sy(v):.1f}" for p, v in zip(position, result["profiles"][name]))
             parts.append(f'<polyline points="{points}" fill="none" stroke="{colour}" stroke-width="1.6"/>')
         for p, v in zip(position, mean):
             parts.append(f'<circle cx="{sx(p):.1f}" cy="{sy(v):.1f}" r="2.4" fill="#d92d20"/>')
-    legend = [("#d92d20", "measured")] + [(c, f"simulated, {g} m cells") for c, g in zip(colours[-len(results):], results)]
-    x = pad
-    for colour, text in legend:
-        parts.append(f'<rect x="{x}" y="{2 * height + 12}" width="14" height="4" fill="{colour}"/><text x="{x + 18}" y="{2 * height + 18}">{text}</text>')
-        x += 30 + 6 * len(text)
+    legend = [("#d92d20", "measured")] + [(c, f"simulated, {g} m cells") for c, g in zip(colours[: len(results)], results)]
+    for index, (colour, text) in enumerate(legend):
+        x, y = pad + (index % 3) * 180, 2 * height + 12 + (index // 3) * 16
+        parts.append(f'<rect x="{x}" y="{y}" width="14" height="4" fill="{colour}"/><text x="{x + 18}" y="{y + 6}">{text}</text>')
     parts.append(f'<text x="8" y="{height}" transform="rotate(-90 8 {height})" text-anchor="middle" fill="#5f6b7d">air velocity / inlet velocity</text>')
     parts.append("</svg>")
     path.write_text("\n".join(parts))
