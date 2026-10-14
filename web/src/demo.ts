@@ -55,10 +55,10 @@ const PROFILES: Record<string, Profile> = {
     catalogue: CLEANROOM_ITEMS,
     sample: "/sample.json",
     examples: [
-      "Clear the room and set it up as a small filling suite: an isolator by the far wall, a workbench near the return wall, and two operators at the isolator.",
-      "What is the lowest fan setting I can safely run, and what does it save?",
-      "Move whichever item does the most harm to a better place, then find the lowest safe setting.",
-      "The operators have gone home. What can the fans drop to overnight?",
+      "Set this up as a small filling suite: an isolator by the far wall, a workbench near the return wall and two operators at the isolator. Then find the lowest safe fan setting and tell me what it saves.",
+      "We are adding a second filling machine next month. Put it where it does least harm, then tell me how far the fans can still come down.",
+      "The operators have gone home and only the isolator keeps running. What can the fans drop to overnight?",
+      "Which item makes the worst point worst? Move it somewhere better and compare the fan setting before and after.",
     ],
     tasks: ["explore", "optimise", "plan", "compare", "confirm"],
     sliceHeight: 1.1,
@@ -74,10 +74,10 @@ const PROFILES: Record<string, Profile> = {
     catalogue: CABINET_ITEMS,
     sample: "/sample-cabinet.json",
     examples: [
-      "What is the lowest fan airflow that keeps every component within its rating?",
-      "Which component is heating the hottest air? Move it somewhere better, then find the lowest safe airflow.",
-      "Add a second drive where it does least harm, then find the lowest safe airflow.",
-      "Lay out an empty plate with a large drive, a power supply, a controller rack and a contactor row, then set the fan.",
+      "Lay out an empty plate with a large drive, a power supply, a controller rack and a contactor row, then find the lowest fan airflow that keeps every component within its rating.",
+      "We are adding a second drive. Put it where it does least harm, then tell me how far the fan can come down.",
+      "Which component is heating the hottest air? Move it somewhere better and compare the airflow before and after.",
+      "The braking resistor only runs during stops. With it switched off, how far can the fan come down?",
     ],
     tasks: ["explore", "optimise", "confirm"],
     sliceHeight: 0.2,
@@ -413,7 +413,7 @@ function render(): void {
       ${languageModel ? `<div class="row"><button class="ghost" id="explain" ${online && !explaining ? "" : "disabled"}>${explaining ? "Writing…" : "Explain this result"}</button>
 </div>` : ""}
       ${explanation ? `<div class="explanation">${explanation.text.split(/\n+/).map((p) => `<p>${escape(p)}</p>`).join("")}<p class="compute">${escape(explanation.model)} on ${escape(explanation.hosted_on)}</p></div>` : ""}
-      <p class="compute">${payload.source !== "model" || !payload.compute ? "OpenFOAM simulation" : `${payload.compute.models} models on ${payload.compute.hardware} · ${number(payload.compute.seconds * 1000)} ms`}</p>
+      ${computeBadge()}
     </section>
 
     <div class="task-picker" data-tour="tasks">
@@ -617,6 +617,14 @@ async function ask(text: string): Promise<void> {
   }
   asking = false;
   render();
+}
+
+/** Who answered: the full detail sits in the tooltip, for anyone checking how AMD hardware is used. */
+function computeBadge(): string {
+  if (!payload || payload.source !== "model" || !payload.compute) return `<p class="compute">OpenFOAM simulation</p>`;
+  const c = payload.compute;
+  const detail = `${c.models} models on ${c.hardware}, ${number(c.seconds * 1000)} ms for this prediction`;
+  return `<p class="compute" title="${escape(detail)}">${c.gpu ? "Powered by AMD" : "Running on a processor"}</p>`;
 }
 
 function escape(text: string): string {
