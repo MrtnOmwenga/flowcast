@@ -108,7 +108,7 @@ export function about(): string {
       <li><b>The same pipeline, a different room.</b> The cabinet was simulated with the same OpenFOAM set-up and the same two networks were trained on it; only the room, the openings and the readouts changed.</li>
       <li><b>Heat travels like particles here.</b> The fan moves heat much faster than warm air rises, so each component's heat is carried as a tracer and the temperatures add up, exactly as particle levels do. This holds for fan-cooled cabinets, not for cabinets cooled by natural draught.</li>
       <li><b>The heat figures are typical losses, not measurements.</b> A 4 kW drive is taken to give off 120 W, a 15 kW drive 400 W, and so on; the page lists them. A datasheet would replace them.</li>
-      <li><b>How accurate it is.</b> On 240 cabinets it never saw, the hottest air is within 10% of the simulation in the median cabinet, and it gives the same verdict on the rating in 94% of them. A prediction takes about a tenth of a second.</li>
+      <li><b>How accurate it is.</b> On cabinets it never saw, the hottest air is within 10% of the simulation in the median cabinet laid out at random, and within 13% in the median cabinet laid out the way panel builders do. It gives the same verdict on the rating in 94% of both. A prediction takes about a tenth of a second.</li>
       <li><b>Why it matters.</b> A cabinet fan that runs slower draws less dust through its filter, makes less noise and lasts longer. Placement matters more: a drive mounted below another heats the air the second one breathes.</li>
     </ul>
 
