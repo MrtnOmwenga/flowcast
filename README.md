@@ -25,6 +25,8 @@ Two demonstrations ship with it: a **small cleanroom** in three ventilation desi
 
 ## How accurate it is
 
+The full report, with method and every figure, is in [`docs/accuracy.md`](docs/accuracy.md).
+
 Every figure below is measured on rooms the model never saw during training. "Realistic" rooms
 are laid out the way real ones are (machines against walls, people at machines, cabinet
 components in rows); "random" rooms place items anywhere.
