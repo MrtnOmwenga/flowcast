@@ -23,7 +23,7 @@ export function home(root: HTMLElement): void {
 
     <section class="band">
       <div class="stats">
-        <div><b>${FACTS.rooms}</b><span>rooms simulated in OpenFOAM to train the model</span></div>
+        <div><b>${FACTS.rooms}</b><span>rooms simulated in OpenFOAM to train the models</span></div>
         <div><b>${FACTS.sameVerdict}</b><span>of unseen rooms get the same within-limit verdict as a full simulation</span></div>
         <div><b>28%</b><span>less fan power for every 10% less air: power falls with the cube of airflow</span></div>
       </div>

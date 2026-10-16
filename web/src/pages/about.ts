@@ -75,13 +75,13 @@ export function about(): string {
     </table>
 
     <h2>How accurate it is</h2>
-    <p>Measured on ${FACTS.testRooms} simulated rooms the model never saw during training:</p>
+    <p>Measured on ${FACTS.testRooms} simulated cleanrooms the model never saw during training, some laid out at random and some the way real rooms are, with machines against walls and people working at them:</p>
     <ul>
-      <li>It gives the same within-limit verdict as the simulation in <b>${FACTS.sameVerdict}</b> of rooms.</li>
-      <li>Its particle level at the worst point is within <b>${FACTS.worstPointError}</b> of the simulation in the median room.</li>
+      <li>It gives the same within-limit verdict as the simulation in <b>${FACTS.sameVerdict}</b> of random rooms and <b>${FACTS.sameVerdictRealistic}</b> of realistic ones.</li>
+      <li>Its particle level at the worst point is within <b>${FACTS.worstPointError}</b> of the simulation in the median random room, and <b>${FACTS.worstPointErrorRealistic}</b> in the median realistic one.</li>
       <li>Its air velocity field is within <b>${FACTS.velocityError}</b> in the median room.</li>
     </ul>
-    <p>Where the independently trained models disagree most, the error roughly doubles. Those are the rooms the interface marks as low confidence.</p>
+    <p>The first models were trained on random layouts only, and on realistic rooms they were about twice as wrong at the worst point. Realistic layouts were then simulated and added to training, which closed most of that gap. Where the independently trained models disagree most, the error roughly doubles; those are the rooms the interface marks as low confidence.</p>
 
     <h2>Checked against a real experiment</h2>
     <p>The model is only as good as the simulations it learns from, so the simulation set-up itself was checked against measurements. The test is the room experiment that the International Energy Agency's Annex 20 adopted as a benchmark in 1990: a room 9 metres long and 3 metres high, with air blown in through a slot under the ceiling and leaving at the floor of the far wall, its air velocity measured by laser along four lines. The same solver, turbulence model and settings that produce Flowcast's training data were run on that room.</p>

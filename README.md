@@ -14,7 +14,7 @@ Built for the AMD Developer Hackathon (lablab.ai), Intelligent Industry track.
 
 ## What it does
 
-- **Predicts the airflow** in a room from its layout and fan setting: air velocity, the age of the air, and each source's particle level (or heat, in the cabinet). One prediction takes about 0.05 s on an AMD Radeon GPU.
+- **Predicts the airflow** in a room from its layout and fan setting: air velocity, the age of the air, and each source's particle level (or heat, in the cabinet). One prediction takes about 0.05 to 0.13 s on an AMD Radeon GPU, depending on the design.
 - **Finds the lowest safe fan setting** for the room as it stands, against a named standard (EU GMP Annex 1 grades, ISO 14644-1 classes) or a component temperature rating.
 - **Confirms by simulation.** The model proposes a setting, a real OpenFOAM simulation checks it, and the fan steps up until a simulation passes.
 - **Finds the best place for an item**, by trying it across the floor.
@@ -31,8 +31,8 @@ components in rows); "random" rooms place items anywhere.
 
 | Design | Test rooms | Worst point, median error | Air velocity, median error | Same within-limit verdict as the simulation |
 |---|---|---|---|---|
-| Cleanroom, ceiling panels: random | 267 | 9.2% | 14.0% | 92% |
-| Cleanroom, ceiling panels: realistic | 105 | 14.8% | 15.3% | 98% |
+| Cleanroom, ceiling panels: random | 267 | 8.9% | 13.7% | 92% |
+| Cleanroom, ceiling panels: realistic | 105 | 13.1% | 14.8% | 98% |
 | Cleanroom, filter ceiling: random | 194 | 4.2% | 3.3% | 98% |
 | Cleanroom, cross-flow: random | 226 | 5.8% | 6.3% | 94% |
 | Control cabinet: random | 240 | 9.8% | 12.0% | 94% |

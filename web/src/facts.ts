@@ -3,12 +3,14 @@
  * Each comes from the held-out evaluation or the simulation logs; see docs/accuracy.md.
  */
 export const FACTS = {
-  rooms: "2,000",
-  testRooms: "279",
+  rooms: "7,500",
+  testRooms: "372",
   simulationSeconds: "about a minute",
   sameVerdict: "92%",
-  worstPointError: "about 10%",
-  velocityError: "about 12%",
+  sameVerdictRealistic: "98%",
+  worstPointError: "about 9%",
+  worstPointErrorRealistic: "about 13%",
+  velocityError: "about 14%",
   repository: "https://github.com/MrtnOmwenga/flowcast",
 };
 
