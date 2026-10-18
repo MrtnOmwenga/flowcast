@@ -13,7 +13,7 @@ export function home(root: HTMLElement): void {
       <div class="hero-text">
         <h1>Cut ventilation energy by up to half.</h1>
         <p class="tagline">A neural CFD surrogate predicts airflow in real time on a digital twin of your room, powered by AMD.</p>
-        <p class="lead">Cleanrooms and control cabinets run their fans at worst case because nobody on site can predict what a lower setting does. Flowcast, trained on 7,500 OpenFOAM simulations, finds the lowest fan setting that still keeps the room within its limit, in seconds, and checks its answer with a real simulation.</p>
+        <p class="lead">Cleanrooms and control cabinets run their fans at worst case because predicting what a lower setting does takes a specialist and a CFD study. Flowcast, trained on 7,500 OpenFOAM simulations, finds the lowest fan setting that still keeps the room within its limit, in seconds, and checks its answer with a real simulation.</p>
         <div class="cta">
           <a class="button" href="#/demos/cleanroom">Open the cleanroom demo</a>
           <a class="button" href="#/demos/cabinet">Open the cabinet demo</a>

@@ -3,7 +3,7 @@
 **Find the lowest safe fan setting for a ventilated room, in seconds, from a model trained on airflow simulations.**
 
 Cleanrooms, control cabinets and many other enclosed spaces run their fans at a fixed, worst-case
-setting because nobody can predict what a lower one would do. A flow simulation could answer,
+setting because predicting what a lower one would do takes a CFD study. A flow simulation could answer,
 but each run needs a specialist and hours of computing, so it is done once at design time and
 never again. Fan power rises with the cube of airflow: 20% less air saves about half the fan's
 power. Flowcast puts that answer within reach of the person who runs the room.

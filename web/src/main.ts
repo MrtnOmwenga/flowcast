@@ -22,7 +22,7 @@ const DEMOS = [
 let demo: Demo | null = null;
 
 header.innerHTML = `
-  <a class="brand" href="#/">${LOGO}<span>Flowcast</span></a>
+  <a class="brand" href="#/">${LOGO}<span class="brand-name">Flowcast<small>Powered by AMD</small></span></a>
   <nav>
     <div class="menu">
       <button class="navlink" id="demos-button" aria-haspopup="true" aria-expanded="false">Demos <span class="caret">▾</span></button>
