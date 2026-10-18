@@ -24,10 +24,34 @@ export function home(root: HTMLElement): void {
 
     <section class="band">
       <div class="stats">
-        <div><b>${FACTS.rooms}</b><span>rooms simulated in OpenFOAM to train the models</span></div>
-        <div><b>${FACTS.sameVerdict}</b><span>of unseen rooms get the same within-limit verdict as a full simulation</span></div>
-        <div><b>28%</b><span>less fan power for every 10% less air: power falls with the cube of airflow</span></div>
+        <div><b>64%</b><span>less fan power in the demo cleanroom, with the recommended setting confirmed by a real CFD simulation</span></div>
+        <div><b>92–98%</b><span>of unseen rooms get the same within-limit verdict as a full simulation</span></div>
+        <div><b>4.3%</b><span>from laser-measured air velocity in a published laboratory experiment (IEA Annex 20)</span></div>
       </div>
+    </section>
+
+    <section class="section-head">
+      <p class="eyebrow">Intelligent Industry</p>
+      <h2>Built for the plant floor</h2>
+      <p>The people who run cleanrooms and control panels get answers that used to need a CFD specialist, from data they already have: the layout, the equipment, the production plan and the standard the room must meet.</p>
+    </section>
+    <section class="cards cards-4">
+      <article>
+        <h3>Use energy efficiently</h3>
+        <p>Find the lowest fan setting that still meets the limit. Fan power falls with the cube of airflow: 20% less air, about half the power.</p>
+      </article>
+      <article>
+        <h3>Protect product quality</h3>
+        <p>Hold the room to EU GMP Annex 1 or ISO 14644-1, staffed and empty, and see where particles gather before a machine is moved.</p>
+      </article>
+      <article>
+        <h3>Prevent downtime</h3>
+        <p>In a control cabinet, keep every drive and power supply under its temperature rating, and place components so none breathes another's heat.</p>
+      </article>
+      <article>
+        <h3>Alert, explain, recommend, act</h3>
+        <p>Over-limit alerts, a plain-language explanation from Gemma 4, a recommended setting or position, and a day's fan schedule from the production plan.</p>
+      </article>
     </section>
 
     <section class="cards">
@@ -45,16 +69,35 @@ export function home(root: HTMLElement): void {
       </article>
     </section>
 
+    <section class="section-head">
+      <p class="eyebrow">Powered by AMD</p>
+      <h2>AMD hardware at every step</h2>
+    </section>
+    <section class="cards">
+      <article>
+        <h3>AMD Radeon GPU with ROCm</h3>
+        <p>Trains every neural network on ${FACTS.rooms} OpenFOAM simulations, and answers each prediction in about a tenth of a second.</p>
+      </article>
+      <article>
+        <h3>AMD Instinct via Token Factory</h3>
+        <p>Runs Gemma 4, the agent that turns plain-language requests and production plans into actions Flowcast carries out.</p>
+      </article>
+      <article>
+        <h3>AMD EPYC in the cloud</h3>
+        <p>Serves the public demo around the clock. Every prediction on the page names the hardware that answered it.</p>
+      </article>
+    </section>
+
     <section class="closing">
       <h2>If you have tuned the fans in a PC case, you already know the problem.</h2>
       <p>Move one fan and every temperature changes, and you only find out by trying. A factory room is the same problem at a larger scale, with a compliance limit attached and a five-figure energy bill. Flowcast is the tool that lets you try the change on screen first.</p>
       <div class="cta">
-        <a class="button" href="#/demos/cleanroom">Try the cleanroom</a>
-        <a class="button" href="#/demos/cabinet">Try the control cabinet</a>
+        <button class="button" id="see-demos-2">See the demos</button>
         <a class="button secondary" href="#/architecture">How it is built</a>
+        <a class="button secondary" href="#/about">Accuracy and evidence</a>
       </div>
     </section>`;
-  root.querySelector<HTMLButtonElement>("#see-demos")?.addEventListener("click", () => openDemoPicker());
+  root.querySelectorAll<HTMLButtonElement>("#see-demos, #see-demos-2").forEach((button) => button.addEventListener("click", () => openDemoPicker()));
   animate(root.querySelector<HTMLCanvasElement>("#flow")!);
 }
 

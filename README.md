@@ -1,85 +1,121 @@
 # Flowcast
 
-**Find the lowest safe fan setting for a ventilated room, in seconds, from a model trained on airflow simulations.**
+**Cut ventilation energy by up to half.** A neural CFD surrogate predicts airflow in real time on a
+digital twin of the room, powered by AMD, and recommends the lowest fan setting that keeps the room
+within its limit. Every recommendation can be confirmed by a real CFD simulation.
 
-Cleanrooms, control cabinets and many other enclosed spaces run their fans at a fixed, worst-case
-setting because predicting what a lower one would do takes a CFD study. A flow simulation could answer,
-but each run needs a specialist and hours of computing, so it is done once at design time and
-never again. Fan power rises with the cube of airflow: 20% less air saves about half the fan's
-power. Flowcast puts that answer within reach of the person who runs the room.
+**[Live demo](https://100-31-84-106.sslip.io)** · **[Slides](docs/presentation/Flowcast-slides.pdf)** · **[Accuracy report](docs/accuracy.md)** · **[Validation against a real experiment](docs/validation/)**
 
-Built for the AMD Developer Hackathon (lablab.ai), Intelligent Industry track.
+Built for the AMD Developer Hackathon: ACT III (lablab.ai), **Intelligent Industry** track.
 
-**Live demo:** https://100-31-84-106.sslip.io (served from an AMD EPYC processor on AWS)
+![Flowcast](docs/presentation/Flowcast-cover.png)
+
+## In one minute
+
+- **The problem.** Cleanrooms, labs and fan-cooled control cabinets run their fans at a fixed, worst-case setting all day. Fan power rises with the cube of airflow, so 20% less air saves about half the fan's power. The fans stay up because predicting what a lower setting does takes a specialist and a CFD study, done once at design time and never repeated as the room changes.
+- **Who uses Flowcast.** The engineer responsible for a room: the facilities, process or validation engineer at a pharmaceutical, biotech or electronics plant, or the designer of a control panel. They need no CFD knowledge.
+- **What it improves.** Energy use, without giving up the room's cleanliness limit or the components' temperature rating.
+- **The measured result.** On both demo rooms the recommended setting was confirmed by a real OpenFOAM simulation:
+
+| Demo room | Runs today at | Flowcast recommends | Confirmed by simulation | Fan power | Saving |
+|---|---|---|---|---|---|
+| Cleanroom, EU GMP grade C, staffed | 30 air changes an hour | 20.25 | Worst point at 98% of the limit | 1,500 W → 544 W | **64%**, about 8,400 kWh a year |
+| Control cabinet, drives rated 50 °C | 1,000 m³/h | 400 m³/h | Hottest air at 85% of the allowed rise | 150 W → 21 W | **86%**, about 1,100 kWh a year |
+
+Fan power is calculated with the cube law, including 8% of losses that do not fall as the fans slow, for continuous running. The baseline powers are stated assumptions; the airflow and the confirmation are measured.
+
+## How it fits the Intelligent Industry brief
+
+| The brief asks for | Flowcast |
+|---|---|
+| Help a manufacturer **use resources more efficiently, improve quality, increase safety or reduce downtime** | Less fan energy (efficiency), while holding the cleanroom's particle limit (product quality) and the cabinet's temperature rating (overheated drives trip and stop the line: downtime) |
+| Work from **industrial data**: machines, sensors, manuals, maintenance records | The plant's layout and equipment, its production plan in plain words, its cleanliness standard (EU GMP Annex 1, ISO 14644-1), typical component heat losses (a datasheet can replace them), and 7,500 CFD simulations of the plant's room designs |
+| Produce a useful **alert, explanation, recommendation or action** | **Alert:** "over the limit" or "too close to call", and a low-confidence warning where the model is unsure. **Explanation:** Gemma 4 explains why the worst point is where it is. **Recommendation:** the lowest safe fan setting and the best place for a machine. **Action:** a day's fan schedule built from the production plan |
+| Show a **measurable improvement** | 64% and 86% less fan power on the demo rooms, confirmed by simulation; accuracy measured on 1,100 unseen rooms |
+| Make clear **who uses it and what result it improves** | See "In one minute" above |
+| **AMD technology powers a meaningful part** | The airflow model trains and runs on an AMD Radeon GPU with ROCm; the language agent runs on AMD Instinct GPUs through AMD's Token Factory; the public demo runs on an AMD EPYC processor |
 
 ## What it does
 
-- **Predicts the airflow** in a room from its layout and fan setting: air velocity, the age of the air, and each source's particle level (or heat, in the cabinet). One prediction takes about 0.05 to 0.13 s on an AMD Radeon GPU, depending on the design.
-- **Finds the lowest safe fan setting** for the room as it stands, against a named standard (EU GMP Annex 1 grades, ISO 14644-1 classes) or a component temperature rating.
-- **Confirms by simulation.** The model proposes a setting, a real OpenFOAM simulation checks it, and the fan steps up until a simulation passes.
-- **Finds the best place for an item**, by trying it across the floor.
-- **Takes requests in plain words.** A language model on AMD's Token Factory (Gemma 4, with DeepSeek as fallback) plans the steps, and Flowcast's own tools do the work. Every number in an answer comes from a tool, not from the language model.
-- **Plans a day.** Paste a production plan; it becomes a fan schedule with lead and clean-up periods, and an energy total.
+- **Predicts the airflow** from the room's layout and fan setting: air velocity, the age of the air, and each source's particle level (or heat, in the cabinet). About 0.05 to 0.13 s per prediction on an AMD Radeon GPU.
+- **Holds the room to a named standard:** EU GMP Annex 1 grades (separate limits staffed and empty) and ISO 14644-1 classes, a site minimum fan setting, or a component temperature rating.
+- **Recommends the lowest safe fan setting,** then **confirms it** with a real OpenFOAM simulation, stepping the fan up until one passes.
+- **Finds the best place for a machine,** by trying it across the floor.
+- **Takes requests in plain words.** Gemma 4 plans the steps and calls Flowcast's own tools, so every number in its answer comes from the airflow model, never from the language model.
+- **Plans a day.** Paste a production plan; get a fan schedule with lead and clean-up periods, and the day's energy.
 
-Two demonstrations ship with it: a **small cleanroom** in three ventilation designs (ceiling panels, filter ceiling, cross-flow), and a **fan-cooled control cabinet**, where heat takes the place of particles.
+Two demos: a **cleanroom** in three ventilation designs (ceiling panels, filter ceiling, cross-flow), and a **fan-cooled control cabinet**, where heat takes the place of particles.
 
-## How accurate it is
+## How the AI is put together
 
-The full report, with method and every figure, is in [`docs/accuracy.md`](docs/accuracy.md).
+```mermaid
+flowchart LR
+  subgraph Offline["Once per room design"]
+    S["OpenFOAM CFD<br/>7,500 simulated rooms"] --> T["Train 3D U-Nets<br/>on an AMD Radeon GPU (ROCm)"]
+  end
+  subgraph Live["Every request"]
+    U["Engineer: drags items,<br/>or asks in plain words"] --> G["Gemma 4 agent<br/>AMD Instinct via Token Factory"]
+    G -->|tool calls| F
+    U --> F["Flow network → airflow<br/>Particle/heat network → each source"]
+    F --> R["Worst point, verdict against the standard,<br/>lowest safe fan setting"]
+    R -->|confirm| C["Real OpenFOAM simulation"]
+  end
+  T --> F
+```
 
-Every figure below is measured on rooms the model never saw during training. "Realistic" rooms
-are laid out the way real ones are (machines against walls, people at machines, cabinet
-components in rows); "random" rooms place items anywhere.
-
-| Design | Test rooms | Worst point, median error | Air velocity, median error | Same within-limit verdict as the simulation |
-|---|---|---|---|---|
-| Cleanroom, ceiling panels: random | 267 | 8.9% | 13.7% | 92% |
-| Cleanroom, ceiling panels: realistic | 105 | 13.1% | 14.8% | 98% |
-| Cleanroom, filter ceiling: random | 194 | 4.2% | 3.3% | 98% |
-| Cleanroom, cross-flow: random | 226 | 5.8% | 6.3% | 94% |
-| Control cabinet: random | 240 | 9.8% | 12.0% | 94% |
-| Control cabinet: realistic | 68 | 13.0% | 14.7% | 94% |
-
-The first models were trained on random layouts only and were about twice as wrong at the worst
-point on realistic rooms. Realistic layouts were then simulated and added to training, which
-closed most of that gap. The filter-ceiling and cross-flow models have not yet been retrained
-this way.
-
-**The simulations themselves** were checked against a published experiment: the IEA Annex 20
-room (Nielsen, 1990), whose air velocity was measured by laser. On a fine grid our set-up
-reproduces it to within 4.3% of the supply velocity; on the 20 cm grid used for the training
-data, to within 10%. See `docs/validation/`.
-
-**Safety margin, measured.** On 100 unseen rooms, the model's recommended setting was confirmed
-safe by simulation 81% of the time at the 15% margin it uses. That is not enough to rely on
-alone, which is why the search confirms its answer with real simulations.
+- **Two networks per design.** A flow network maps the layout and fan setting to the airflow. A second network maps one source, plus that airflow, to that source's particle or heat field. Fields add up, so switching a machine off needs no new prediction, and a search can try hundreds of settings in seconds.
+- **Scaled so one network covers every fan setting.** Velocity is divided by the supply speed, and particle level is multiplied by the airflow.
+- **An ensemble.** Two to four networks per design, trained from different random starts. Their average is the prediction, and their disagreement is the confidence reading on the page.
+- **The language model is an operator, not an oracle.** Gemma reads the request, chooses tools (move, add, search, schedule) and writes the answer from what the tools return. If Gemma is unavailable, DeepSeek on the same service takes over, and the page names the model that answered.
 
 ## Where AMD hardware is used
 
-1. **Our airflow model** is trained and served with PyTorch on ROCm on an AMD Radeon RX 6600.
-2. **The language features** use models served on AMD Instinct GPUs through AMD's Token Factory.
+| Part | AMD hardware | What it does |
+|---|---|---|
+| Training and GPU serving | **Radeon RX 6600 with ROCm** (PyTorch) | Trains every network; answers each prediction in about 0.1 s |
+| Language agent | **Instinct GPUs via AMD Token Factory** | Runs Gemma 4 (and DeepSeek as fallback) for requests, explanations and day planning |
+| Public demo | **EPYC processor** (AWS) | Serves the live site around the clock |
 
-The page shows which hardware answered each prediction.
+Each prediction on the page is labelled with the hardware that answered it.
 
-## How it works
+## How accurate it is
 
-```
-room layout + fan setting
-      │
-      ▼
-flow network (3D U-Net) ──► air velocity, age of air
-      │
-      ▼
-particle network (3D U-Net, once per source) ──► each source's field for a release of 1 per second
-      │
-      ▼
-scale by each source's release, add up ──► level everywhere, worst point, verdict
-```
+All figures are measured on rooms the model never saw. "Realistic" rooms are laid out the way
+real ones are: machines against walls, people at machines, cabinet components in rows.
 
-- **Training data:** 7,000+ rooms simulated with OpenFOAM (steady RANS, k-epsilon turbulence model, 20 cm grid), each with one tracer per source and an age-of-air tracer.
-- **Two networks:** the flow network predicts the airflow; the particle network predicts one source's field given that airflow. Because tracers do not change the air, fields add up, so switching a source on or off needs no new prediction.
-- **Scaled inputs:** velocity is divided by the supply speed and particle level multiplied by the airflow, so one network covers every fan setting.
-- **Ensemble:** two to four networks per design, trained from different random starts. Their average is the prediction; their disagreement is the confidence reading on the page.
+| Design | Test rooms | Worst point, median error | Same within-limit verdict as the simulation |
+|---|---|---|---|
+| Cleanroom, ceiling panels: random / realistic | 267 / 105 | 8.9% / 13.1% | 92% / 98% |
+| Cleanroom, filter ceiling | 194 | 4.2% | 98% |
+| Cleanroom, cross-flow | 226 | 5.8% | 94% |
+| Control cabinet: random / realistic | 240 / 68 | 9.8% / 13.0% | 94% / 94% |
+
+- **A weakness found and fixed.** The first models were about twice as wrong on realistic rooms. We simulated 1,000 realistic rooms, retrained, and closed most of the gap.
+- **The simulations themselves are validated.** On the published IEA Annex 20 room experiment, our CFD set-up matches the laser-measured air velocity to within 4.3% of the supply velocity. See [docs/validation](docs/validation/).
+- **Why recommendations are confirmed.** At the 15% safety margin used, 81% of the model's recommendations proved safe by simulation on 100 unseen rooms. That is too few to trust alone, so Flowcast confirms its answer with real CFD.
+
+Full method and every figure: [docs/accuracy.md](docs/accuracy.md).
+
+## Business value
+
+- **Proven demand.** Industry already pays to cut cleanroom air: Roche/Genentech runs an air-change-reduction programme, vendors sell airflow-reduction systems, and ISO 14644-16 sets out cleanroom energy efficiency. Lawrence Berkeley National Laboratory measured 60 to 80% fan-energy savings from demand-controlled filtration.
+- **Customers.** Pharmaceutical and biotech manufacturing, electronics, hospital pharmacies and laboratories; with the heat version, panel builders and equipment rooms.
+
+| Approach | Limit | Flowcast |
+|---|---|---|
+| Reactive control (EECO2, Telstar SmartCR): particle counters drive the fans | Sees only where the counters are; finds out after the fact; needs hardware and a retrofit | Predicts the whole room before a change; works alongside a controller |
+| A consultant's CFD study | Weeks and a specialist per question; never repeated | Any layout, any fan setting, in a tenth of a second |
+| AI twins for chip fabs (TwinFab) | No published accuracy; aimed at the largest sites | Published error, open source, aimed at ordinary cleanrooms and cabinets |
+
+- **Revenue model.** A subscription per room for daily use: change planning, night setback and fan schedules. Each new room design is set up once (simulations and training), and every design widens the library.
+- **Where it goes.** Describe a room in plain words or upload a drawing, and Gemma builds its digital twin within the library of trained designs. Then a finer training grid, people who move, and learning from every room confirmed by simulation.
+
+## What is original
+
+- **It predicts before you change anything.** Existing controllers react to sensors after the fact.
+- **It checks itself.** Each recommendation can be confirmed by a real CFD run, and the page reports where the model is unsure.
+- **It publishes its error,** against both simulation and a laboratory experiment.
+- **One pipeline, many spaces.** The same code serves particles in cleanrooms and heat in cabinets; a new room type is a pipeline run, not a new project.
 
 ## Run it
 
@@ -95,7 +131,7 @@ uvicorn flowcast.api.app:app --port 8000
 # the page
 cd web && npm ci && npm run dev
 
-# simulate a batch of rooms, then train
+# simulate a batch of rooms, then train and evaluate
 python -m flowcast.sim.batch --room panels --count 1500 --out data/cases
 python -m flowcast.model.train --task flow --data data/cases --out data/models/flow/0
 python -m flowcast.model.train --task particles --data data/cases --out data/models/particles/0
@@ -113,11 +149,11 @@ podman run --rm -p 8000:8000 --env-file .env -v ./data:/data:ro,z flowcast
 
 | Folder | Contents |
 |---|---|
-| `flowcast/sim` | Room designs, layout sampling, OpenFOAM case writing, batch runner, the Annex 20 check |
-| `flowcast/model` | Feature scaling, the networks, training, the ensemble, evaluation, the margin study |
-| `flowcast/api` | The service: predictions, search, verification, standards, heat, the agent, explanations, day planning |
+| `flowcast/sim` | Room designs, layout sampling (random and realistic), OpenFOAM case writing, batch runner, the Annex 20 check |
+| `flowcast/model` | Feature scaling, the networks, training, the ensemble, evaluation, the safety-margin study |
+| `flowcast/api` | The service: predictions, search, verification, standards, heat, the Gemma agent, explanations, day planning |
 | `web` | The site: TypeScript and three.js |
-| `docs/validation` | The Annex 20 measurements, results and chart |
+| `docs` | Accuracy report, validation data and chart, slides |
 | `deploy/aws` | Scripts to host the demo on one AMD EPYC machine |
 
 ## Limits

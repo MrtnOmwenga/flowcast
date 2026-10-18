@@ -48,6 +48,14 @@ export function about(): string {
     <h2>Who it is for</h2>
     <p>The process or facilities engineer responsible for a room, who needs to know before making a change whether the room stays within its limit and what the fans can drop to. The buyer is whoever pays the energy bill and carries the compliance risk.</p>
 
+    <h2>The business case</h2>
+    <ul>
+      <li><b>A measured saving.</b> In the demo cleanroom, held to EU GMP grade C while staffed, Flowcast recommends 20.25 air changes an hour instead of 30, and a real CFD simulation confirms the room stays within its limit: 64% less fan power. In the demo cabinet the fan can drop from 1,000 to 400 m³/h with every component under its rating: 86% less fan power.</li>
+      <li><b>Proven demand.</b> Industry already pays to cut cleanroom air: Roche/Genentech runs an air-change-reduction programme, vendors sell airflow-reduction systems, ISO 14644-16 covers cleanroom energy efficiency, and Lawrence Berkeley National Laboratory measured 60 to 80% fan-energy savings from demand-controlled filtration.</li>
+      <li><b>Customers.</b> Pharmaceutical and biotech manufacturing, electronics, hospital pharmacies and laboratories; with the heat version, panel builders and equipment rooms.</li>
+      <li><b>Revenue.</b> A subscription per room for daily use: change planning, night setback and fan schedules. Each new room design is set up once, and every design widens the library of rooms Flowcast can model.</li>
+    </ul>
+
     <h2>How it differs from what exists</h2>
     <table>
       <thead><tr><th>Today</th><th>What it does</th><th>What it leaves open</th></tr></thead>

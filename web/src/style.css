@@ -251,3 +251,12 @@ button.ghost { padding: 6px 10px; font-size: 13px; }
 .picker-card.is-soon { opacity: 0.55; cursor: default; }
 .picker-card.is-soon img { filter: grayscale(1); }
 @media (max-width: 640px) { .picker-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.section-head { max-width: 1000px; margin: 0 auto; padding: 48px 24px 0; }
+.section-head h2 { font-size: 28px; line-height: 1.2; letter-spacing: -0.01em; text-transform: none; color: var(--text); margin: 0 0 8px; }
+.section-head p:not(.eyebrow) { color: #3b4658; font-size: 16px; line-height: 1.6; max-width: 46em; margin: 0; }
+.section-head + .cards { padding-top: 20px; }
+.cards-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 900px) { .cards-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .cards-4 { grid-template-columns: 1fr; } }
+button.button { font: inherit; font-weight: 600; cursor: pointer; border: none; }
