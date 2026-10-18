@@ -10,7 +10,7 @@ power. Flowcast puts that answer within reach of the person who runs the room.
 
 Built for the AMD Developer Hackathon (lablab.ai), Intelligent Industry track.
 
-<!-- Live demo: link added at deployment -->
+**Live demo:** https://100-31-84-106.sslip.io (served from an AMD EPYC processor on AWS)
 
 ## What it does
 
