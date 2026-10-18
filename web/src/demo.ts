@@ -136,12 +136,17 @@ function available(d: Design): boolean {
 let inFlight = false;
 let queued = false;
 
-export function mount(root: HTMLElement, name = "cleanroom"): void {
+let wantedDesign: string | undefined; // a design asked for in the address, applied once the service answers
+
+export function mount(root: HTMLElement, name = "cleanroom", design?: string): void {
+  wantedDesign = design;
   if (scene) {
     if (PROFILES[name] !== profile) {
       profile = PROFILES[name];
       reset();
       void start();
+    } else if (design && online) {
+      setDesign(design);
     }
     return;
   }
@@ -956,6 +961,7 @@ async function start(): Promise<void> {
     languageModel = health.language_model ?? null;
     apply(await api.predict(state), true);
     online = true;
+    if (wantedDesign && wantedDesign !== state.room) setDesign(wantedDesign);
   } catch {
     online = false;
   }

@@ -3,6 +3,7 @@ import { FACTS, LOGO } from "./facts";
 import { about } from "./pages/about";
 import { architecture } from "./pages/architecture";
 import { home, stopHome } from "./pages/home";
+import { openDemoPicker } from "./picker";
 
 type Demo = typeof import("./demo");
 
@@ -41,9 +42,11 @@ function setMenu(open: boolean): void {
   menu.hidden = !open;
   button.setAttribute("aria-expanded", String(open));
 }
+// The Demos button opens the picker, which shows every demo and design with a preview.
 button.addEventListener("click", (event) => {
   event.stopPropagation();
-  setMenu(menu.hidden);
+  setMenu(false);
+  openDemoPicker();
 });
 document.addEventListener("click", () => setMenu(false));
 document.addEventListener("keydown", (event) => {
@@ -63,7 +66,9 @@ async function route(): Promise<void> {
   });
   if (isDemo) {
     demo ??= await import("./demo");
-    demo.mount(demoRoot, hash.startsWith("#/demos/cabinet") ? "cabinet" : "cleanroom");
+    // #/demos/<demo>/<design>: the picker opens a demo on a chosen design
+    const [, , name, design] = hash.split("/");
+    demo.mount(demoRoot, name === "cabinet" ? "cabinet" : "cleanroom", design);
     demo.setActive(true);
     return;
   }
