@@ -11,11 +11,12 @@ export function home(root: HTMLElement): void {
     <section class="hero">
       <canvas id="flow" aria-hidden="true"></canvas>
       <div class="hero-text">
-        <p class="eyebrow">Airflow prediction for ventilated rooms</p>
-        <h1>Know what the air will do before you change the room.</h1>
-        <p class="lead">Cleanrooms, paint booths and workshops run their fans flat out because nobody on site can predict what happens if they turn them down. Flowcast predicts the airflow for any layout in a fraction of a second and finds the lowest fan setting that still keeps the room within its limit.</p>
+        <h1>Cut ventilation energy by up to half.</h1>
+        <p class="tagline">A neural CFD surrogate predicts airflow in real time on a digital twin of your room, powered by AMD.</p>
+        <p class="lead">Cleanrooms and control cabinets run their fans at worst case because nobody on site can predict what a lower setting does. Flowcast, trained on 7,500 OpenFOAM simulations, finds the lowest fan setting that still keeps the room within its limit, in seconds, and checks its answer with a real simulation.</p>
         <div class="cta">
           <a class="button" href="#/demos/cleanroom">Open the cleanroom demo</a>
+          <a class="button" href="#/demos/cabinet">Open the cabinet demo</a>
           <a class="button secondary" href="#/about">What it is and why</a>
         </div>
       </div>
