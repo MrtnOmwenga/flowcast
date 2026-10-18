@@ -196,6 +196,7 @@ async function refresh(): Promise<void> {
     return;
   }
   inFlight = true;
+  setPredicting(true);
   try {
     const requested = JSON.stringify(state);
     const result = await api.predict(state);
@@ -209,8 +210,22 @@ async function refresh(): Promise<void> {
     if (queued) {
       queued = false;
       void refresh();
+    } else {
+      setPredicting(false);
     }
   }
+}
+
+/** A badge over the picture while a prediction is on its way, so a slow host never looks frozen. */
+function setPredicting(on: boolean): void {
+  let badge = view.querySelector<HTMLElement>(".predicting");
+  if (!badge) {
+    badge = document.createElement("div");
+    badge.className = "predicting";
+    badge.innerHTML = `<span class="spinner"></span>Updating the prediction…`;
+    view.appendChild(badge);
+  }
+  badge.classList.toggle("on", on);
 }
 
 function sameLayout(a: Machine[], b: Machine[]): boolean {
