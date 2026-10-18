@@ -29,14 +29,12 @@ echo "3. build"
 echo "4. run"
 "${SSH[@]}" bash -s <<REMOTE
 set -e
-podman rm -f flowcast caddy >/dev/null 2>&1 || true
-podman run -d --name flowcast --restart=always --env-file ~/flowcast.env \
+podman run -d --replace --name flowcast --restart=always --env-file ~/flowcast.env \
   -e FLOWCAST_HARDWARE="AWS t3a.xlarge, AMD EPYC processor" \
   -v ~/flowcast-data:/data:ro,z -p 127.0.0.1:8000:8000 localhost/flowcast
 mkdir -p ~/caddy
 printf '%s {\n  reverse_proxy 127.0.0.1:8000\n}\n' $NAME > ~/caddy/Caddyfile
-sudo podman rm -f caddy >/dev/null 2>&1 || true
-sudo podman run -d --name caddy --restart=always --network host \
+sudo podman run -d --replace --name caddy --restart=always --network host \
   -v /home/ubuntu/caddy/Caddyfile:/etc/caddy/Caddyfile:ro,z -v caddy-data:/data docker.io/library/caddy:2
 sudo systemctl enable --now podman-restart.service >/dev/null 2>&1 || true
 systemctl --user enable --now podman-restart.service >/dev/null 2>&1 || true
